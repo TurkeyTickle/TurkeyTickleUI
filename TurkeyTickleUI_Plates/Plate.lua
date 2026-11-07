@@ -99,11 +99,12 @@ local function abbreviate(n)
 	return tostring(n)
 end
 
--- Bronze bevel matching the Forever unit frames, sampled outside-in: dark edge, highlight, bronze, dark inner line.
+-- Bronze bevel matching the Forever unit frames, sampled outside-in: dark edge, highlight, bronze.
 local BORDER_STYLES = {
-	normal = { { 0.23, 0.15, 0.07 }, { 0.55, 0.43, 0.27 }, { 0.38, 0.27, 0.15 }, { 0.08, 0.06, 0.04 } },
-	target = { { 0.30, 0.22, 0.05 }, { 1.00, 0.88, 0.45 }, { 0.85, 0.66, 0.20 }, { 0.10, 0.08, 0.03 } },
+	normal = { { 0.23, 0.15, 0.07 }, { 0.55, 0.43, 0.27 }, { 0.38, 0.27, 0.15 } },
+	target = { { 0.30, 0.22, 0.05 }, { 1.00, 0.88, 0.45 }, { 0.85, 0.66, 0.20 } },
 }
+local BORDER_SIZE = #BORDER_STYLES.normal
 
 local Border = {}
 
@@ -116,8 +117,8 @@ end
 local function addBorder(frame, anchor)
 	anchor = anchor or frame
 	local border = Mixin({}, Border)
-	for i = 1, 4 do
-		local inset = 5 - i
+	for i = 1, BORDER_SIZE do
+		local inset = BORDER_SIZE + 1 - i
 		local ring = frame:CreateTexture(nil, "BACKGROUND", nil, -9 + i)
 		ring:SetTexture(SOLID)
 		ring:SetPoint("TOPLEFT", anchor, -inset, inset)
@@ -209,7 +210,7 @@ function ns:GetPlate(nameplate)
 	alertFade:SetDuration(0.35)
 
 	plate.name = plate:CreateFontString(nil, "OVERLAY")
-	plate.name:SetPoint("BOTTOM", plate.health, "TOP", 0, 3)
+	plate.name:SetPoint("BOTTOM", plate.health, "TOP", 0, BORDER_SIZE + 3)
 	plate.name:SetWordWrap(false)
 
 	plate.level = plate.health:CreateFontString(nil, "OVERLAY")
@@ -296,7 +297,7 @@ function Plate:ApplyLayout()
 	setFont(self.cast.text, db.fontSize - 1)
 	setFont(self.cast.timer, db.fontSize - 2)
 	self.debuffs:ClearAllPoints()
-	self.debuffs:SetPoint("BOTTOM", self.health, "TOP", 0, db.fontSize + 7)
+	self.debuffs:SetPoint("BOTTOM", self.health, "TOP", 0, db.fontSize + BORDER_SIZE + 9)
 	for _, icon in ipairs(self.debuffs.icons) do
 		icon:SetSize(db.debuffSize, db.debuffSize * 0.75)
 		setFont(icon.count, db.fontSize - 1)
