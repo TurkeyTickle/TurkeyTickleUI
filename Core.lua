@@ -12,6 +12,7 @@ ns.defaults = {
 	threatColors = true,
 	tankMode = false,
 	threatWarnPercent = 80,
+	maxDistance = 60,
 	executeHighlight = true,
 	executePercent = 20,
 	showDebuffs = true,
@@ -81,7 +82,19 @@ function ns:OnPlateRemoved(unit)
 	end
 end
 
+function ns:ApplyDistance()
+	if InCombatLockdown() then
+		self.distancePending = true
+		return
+	end
+	self.distancePending = nil
+	if tonumber(GetCVar("nameplateMaxDistance")) ~= self.db.maxDistance then
+		SetCVar("nameplateMaxDistance", self.db.maxDistance)
+	end
+end
+
 function ns:RefreshAll()
+	self:ApplyDistance()
 	for _, nameplate in ipairs(C_NamePlate.GetNamePlates()) do
 		local unit = nameplate.namePlateUnitToken or (nameplate.UnitFrame and nameplate.UnitFrame.unit)
 		if unit then
@@ -152,12 +165,35 @@ function globalHandlers.RAID_TARGET_UPDATE()
 	end)
 end
 
-function globalHandlers.PLAYER_REGEN_ENABLED()
+function globalHandlers.PLAYER_REGEN_DISABLED()
 	ns:ForEachPlate(function(plate)
 		plate:UpdateThreat()
 	end)
 end
-globalHandlers.PLAYER_REGEN_DISABLED = globalHandlers.PLAYER_REGEN_ENABLED
+
+function globalHandlers.PLAYER_REGEN_ENABLED()
+	globalHandlers.PLAYER_REGEN_DISABLED()
+	if ns.distancePending then
+		ns:ApplyDistance()
+	end
+end
+
+function globalHandlers.PLAYER_ENTERING_WORLD()
+	ns:ApplyDistance()
+end
+
+function globalHandlers.CVAR_UPDATE(name, value)
+	if type(name) ~= "string" or name:lower() ~= "nameplatemaxdistance" then
+		return
+	end
+	-- Let other addons raise it temporarily, but put ours back if something lowers it.
+	value = tonumber(value)
+	if value and value < ns.db.maxDistance then
+		C_Timer.After(0, function()
+			ns:ApplyDistance()
+		end)
+	end
+end
 
 driver:SetScript("OnEvent", function(_, event, unit, ...)
 	local method = unitHandlers[event]

@@ -154,6 +154,7 @@ function ns:CreateOptions()
 	end
 
 	local right = {
+		createSlider(panel, "maxDistance", "Nameplate distance (yards)", 20, 100, 1),
 		createSlider(panel, "width", "Width", 60, 220, 2),
 		createSlider(panel, "height", "Health height", 4, 30, 1),
 		createSlider(panel, "castHeight", "Cast bar height", 4, 24, 1),
