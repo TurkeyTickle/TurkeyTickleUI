@@ -26,14 +26,11 @@ local function hasAtlas(name)
 	return C_Texture and C_Texture.GetAtlasInfo and C_Texture.GetAtlasInfo(name) ~= nil
 end
 
-local CAST_ATLAS = {
-	cast = "ui-castingbar-filling-standard",
-	channel = "ui-castingbar-filling-channel",
-	locked = "ui-castingbar-uninterruptable",
-	failed = "ui-castingbar-interrupted",
-}
-local useCastAtlas = hasAtlas(CAST_ATLAS.cast) and hasAtlas(CAST_ATLAS.channel)
-	and hasAtlas(CAST_ATLAS.locked) and hasAtlas(CAST_ATLAS.failed)
+-- The tintable fill the Forever unit frames use for status-colored health bars.
+local UNIT_FRAME_BAR = "UI-HUD-UnitFrame-Player-PortraitOn-Bar-Health-Status"
+if hasAtlas(UNIT_FRAME_BAR) then
+	BAR_TEXTURE = UNIT_FRAME_BAR
+end
 local SHIELD_ATLAS = hasAtlas("nameplates-InterruptShield") and "nameplates-InterruptShield"
 local ELITE_ATLAS = hasAtlas("nameplates-icon-elite-gold") and "nameplates-icon-elite-gold"
 local RARE_ATLAS = hasAtlas("nameplates-icon-elite-silver") and "nameplates-icon-elite-silver"
@@ -102,12 +99,32 @@ local function abbreviate(n)
 	return tostring(n)
 end
 
+-- Bronze bevel matching the Forever unit frames, sampled outside-in: dark edge, highlight, bronze, dark inner line.
+local BORDER_STYLES = {
+	normal = { { 0.23, 0.15, 0.07 }, { 0.55, 0.43, 0.27 }, { 0.38, 0.27, 0.15 }, { 0.08, 0.06, 0.04 } },
+	target = { { 0.30, 0.22, 0.05 }, { 1.00, 0.88, 0.45 }, { 0.85, 0.66, 0.20 }, { 0.10, 0.08, 0.03 } },
+}
+
+local Border = {}
+
+function Border:SetStyle(name)
+	for i, color in ipairs(BORDER_STYLES[name]) do
+		self[i]:SetVertexColor(color[1], color[2], color[3], 1)
+	end
+end
+
 local function addBorder(frame, anchor)
-	local border = frame:CreateTexture(nil, "BACKGROUND", nil, -8)
-	border:SetTexture(SOLID)
-	border:SetVertexColor(0, 0, 0, 1)
-	border:SetPoint("TOPLEFT", anchor or frame, -1, 1)
-	border:SetPoint("BOTTOMRIGHT", anchor or frame, 1, -1)
+	anchor = anchor or frame
+	local border = Mixin({}, Border)
+	for i = 1, 4 do
+		local inset = 5 - i
+		local ring = frame:CreateTexture(nil, "BACKGROUND", nil, -9 + i)
+		ring:SetTexture(SOLID)
+		ring:SetPoint("TOPLEFT", anchor, -inset, inset)
+		ring:SetPoint("BOTTOMRIGHT", anchor, inset, -inset)
+		border[i] = ring
+	end
+	border:SetStyle("normal")
 	return border
 end
 
@@ -116,7 +133,8 @@ local function createBar(parent)
 	bar:SetStatusBarTexture(BAR_TEXTURE)
 	bar.border = addBorder(bar)
 	bar.bg = bar:CreateTexture(nil, "BACKGROUND", nil, 0)
-	bar.bg:SetTexture(BAR_TEXTURE)
+	bar.bg:SetTexture(SOLID)
+	bar.bg:SetVertexColor(0.05, 0.05, 0.05, 1)
 	bar.bg:SetAllPoints()
 	return bar
 end
@@ -150,20 +168,12 @@ function ns:GetPlate(nameplate)
 	plate.health = createBar(plate)
 	plate.health:SetAllPoints()
 
-	plate.selection = plate.health:CreateTexture(nil, "BACKGROUND", nil, -7)
-	plate.selection:SetTexture(SOLID)
-	plate.selection:SetVertexColor(1, 1, 1, 0.9)
-	plate.selection:SetPoint("TOPLEFT", -2, 2)
-	plate.selection:SetPoint("BOTTOMRIGHT", 2, -2)
-	plate.selection:Hide()
-	plate.health.border:SetDrawLayer("BACKGROUND", -6)
-
 	-- Sits below the health frame, so only the parts outside the bar show: a solid ring plus a soft outer halo.
 	plate.threatGlow = CreateFrame("Frame", nil, plate)
 	plate.threatGlow:SetFrameLevel(plate:GetFrameLevel())
 	plate.threatGlow:SetAllPoints(plate.health)
 	plate.threatGlow.layers = {}
-	for i, layer in ipairs({ { 4, 1 }, { 7, 0.45 }, { 10, 0.2 } }) do
+	for i, layer in ipairs({ { 6, 1 }, { 9, 0.45 }, { 12, 0.2 } }) do
 		local tex = plate.threatGlow:CreateTexture(nil, "BACKGROUND", nil, -i)
 		tex:SetTexture(SOLID)
 		tex:SetPoint("TOPLEFT", -layer[1], layer[1])
@@ -216,8 +226,8 @@ function ns:GetPlate(nameplate)
 	plate.raidIcon:SetPoint("LEFT", plate.health, "RIGHT", 36, 0)
 
 	plate.cast = createBar(plate)
-	plate.cast:SetPoint("TOPLEFT", plate.health, "BOTTOMLEFT", 0, -4)
-	plate.cast:SetPoint("TOPRIGHT", plate.health, "BOTTOMRIGHT", 0, -4)
+	plate.cast:SetPoint("TOPLEFT", plate.health, "BOTTOMLEFT", 0, -5)
+	plate.cast:SetPoint("TOPRIGHT", plate.health, "BOTTOMRIGHT", 0, -5)
 	plate.cast.bg:SetVertexColor(0, 0, 0, 0.6)
 	plate.cast:Hide()
 	plate.cast:SetScript("OnUpdate", function(bar)
@@ -231,9 +241,8 @@ function ns:GetPlate(nameplate)
 
 	plate.cast.icon = plate.cast:CreateTexture(nil, "OVERLAY")
 	plate.cast.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
-	plate.cast.icon:SetPoint("RIGHT", plate.cast, "LEFT", -3, 0)
+	plate.cast.icon:SetPoint("RIGHT", plate.cast, "LEFT", -5, 0)
 	plate.cast.iconBorder = addBorder(plate.cast, plate.cast.icon)
-	plate.cast.iconBorder:SetDrawLayer("ARTWORK")
 
 	plate.cast.shield = plate.cast:CreateTexture(nil, "OVERLAY", nil, 1)
 	if SHIELD_ATLAS then
@@ -329,7 +338,7 @@ end
 function Plate:UpdateName()
 	local unit = self.unit
 	self.name:SetText(UnitName(unit) or "")
-	self.name:SetTextColor(1, 1, 1)
+	self.name:SetTextColor(1, 0.82, 0)
 
 	self.elite:Hide()
 	local level = known(UnitLevel(unit))
@@ -511,11 +520,10 @@ function Plate:UpdateHealthColor(pct)
 
 	local r, g, b = color[1], color[2], color[3]
 	self.health:SetStatusBarColor(r, g, b)
-	self.health.bg:SetVertexColor(r * 0.25, g * 0.25, b * 0.25, 1)
 end
 
 function Plate:UpdateTarget()
-	self.selection:SetShown(known(UnitIsUnit(self.unit, "target")) == true)
+	self.health.border:SetStyle(known(UnitIsUnit(self.unit, "target")) == true and "target" or "normal")
 end
 
 function Plate:UpdateRaidIcon()
@@ -588,7 +596,7 @@ function Plate:UpdateDebuffs()
 		icons[i]:Hide()
 	end
 
-	local spacing = 3
+	local spacing = 6
 	local total = shown * db.debuffSize + math.max(shown - 1, 0) * spacing
 	for i = 1, shown do
 		icons[i]:ClearAllPoints()
@@ -598,14 +606,8 @@ end
 
 function Plate:SetCastStyle(kind)
 	local cast = self.cast
-	if useCastAtlas then
-		cast:SetStatusBarTexture(CAST_ATLAS[kind])
-		cast:SetStatusBarColor(1, 1, 1)
-	else
-		local color = ns.colors[kind]
-		cast:SetStatusBarTexture(BAR_TEXTURE)
-		cast:SetStatusBarColor(color[1], color[2], color[3])
-	end
+	local color = ns.colors[kind]
+	cast:SetStatusBarColor(color[1], color[2], color[3])
 	cast.shield:SetShown(kind == "locked" and SHIELD_ATLAS ~= nil)
 end
 

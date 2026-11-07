@@ -163,6 +163,42 @@ function ns:DebugThreat()
 	self:Print("simple status=" .. show(UnitThreatSituation("player", unit)))
 end
 
+-- Records every texture Blizzard's unit frames use into saved variables, so the art can be matched.
+function ns:DumpFrames()
+	local out = {}
+	local function describeTexture(tex)
+		local w, h = tex:GetSize()
+		local r, g, b, a = tex:GetVertexColor()
+		local _, sub = tex:GetDrawLayer()
+		return format("%s | atlas=%s file=%s size=%.0fx%.0f color=%.2f,%.2f,%.2f,%.2f layer=%s:%s shown=%s",
+			tex:GetDebugName() or "?", tostring(tex:GetAtlas()), tostring(tex:GetTexture()), w or 0, h or 0,
+			r or 1, g or 1, b or 1, a or 1, tostring((tex:GetDrawLayer())), tostring(sub), tostring(tex:IsShown()))
+	end
+	local function walk(frame, depth)
+		if depth > 12 or frame:IsForbidden() then
+			return
+		end
+		if frame.GetStatusBarTexture and frame:GetStatusBarTexture() then
+			tinsert(out, "STATUSBAR " .. describeTexture(frame:GetStatusBarTexture()))
+		end
+		for _, region in ipairs({ frame:GetRegions() }) do
+			if region:IsObjectType("Texture") then
+				tinsert(out, describeTexture(region))
+			end
+		end
+		for _, child in ipairs({ frame:GetChildren() }) do
+			walk(child, depth + 1)
+		end
+	end
+	for _, name in ipairs({ "PlayerFrame", "PetFrame", "TargetFrame" }) do
+		if _G[name] then
+			walk(_G[name], 0)
+		end
+	end
+	self.db.frameDump = out
+	self:Print(format("Saved %d textures. Type /reload so they get written to disk.", #out))
+end
+
 local driver = CreateFrame("Frame")
 ns.driver = driver
 
@@ -297,6 +333,8 @@ SlashCmdList.TURKEYTICKLEUI_PLATES = function(msg)
 		ns.db.tankMode = not ns.db.tankMode
 		ns:Print("Tank mode " .. (ns.db.tankMode and "|cff00ff00on|r" or "|cffff4040off|r"))
 		ns:RefreshAll()
+	elseif msg == "dump" then
+		ns:DumpFrames()
 	elseif msg == "threat" then
 		ns:DebugThreat()
 	elseif msg == "reset" then
