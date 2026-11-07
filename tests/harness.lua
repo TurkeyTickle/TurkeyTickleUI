@@ -62,9 +62,9 @@ Settings = {
 }
 local nameplate = stub()
 nameplate.UnitFrame = stub()
-rawset(nameplate, "ForeverPlate", false)
+rawset(nameplate, "TurkeyTicklePlate", false)
 rawset(nameplate, "namePlateUnitToken", "nameplate1")
-rawset(nameplate.UnitFrame, "foreverPlatesHooked", false)
+rawset(nameplate.UnitFrame, "turkeyTicklePlatesHooked", false)
 C_NamePlate = { GetNamePlateForUnit = function() return nameplate end, GetNamePlates = function() return { nameplate } end }
 C_UnitAuras = { GetDebuffDataByIndex = function() return nil end }
 function UnitIsUnit(a, b) return false end
