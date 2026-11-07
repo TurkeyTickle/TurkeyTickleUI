@@ -1,8 +1,42 @@
 local _, ns = ...
 
-local BAR_TEXTURE = "Interface\\Buttons\\WHITE8X8"
-local RAID_ICONS = "Interface\\TargetingFrame\\UI-RaidTargetingIcons"
+local BAR_TEXTURE = "Interface\\TargetingFrame\\UI-StatusBar"
+local SOLID = "Interface\\Buttons\\WHITE8X8"
+local SPARK = "Interface\\CastingBar\\UI-CastingBar-Spark"
 local FAIL_DISPLAY_TIME = 0.6
+
+local issecretvalue = issecretvalue or function()
+	return false
+end
+
+-- On this engine, unit APIs can return "secret" values that error when compared or used in math.
+-- Anything we branch on goes through known(); secrets read as nil and we fall back to a safe default.
+local function known(v)
+	if issecretvalue(v) then
+		return nil
+	end
+	return v
+end
+
+local function safeCall(fn, ...)
+	return xpcall(fn, geterrorhandler(), ...)
+end
+
+local function hasAtlas(name)
+	return C_Texture and C_Texture.GetAtlasInfo and C_Texture.GetAtlasInfo(name) ~= nil
+end
+
+local CAST_ATLAS = {
+	cast = "ui-castingbar-filling-standard",
+	channel = "ui-castingbar-filling-channel",
+	locked = "ui-castingbar-uninterruptable",
+	failed = "ui-castingbar-interrupted",
+}
+local useCastAtlas = hasAtlas(CAST_ATLAS.cast) and hasAtlas(CAST_ATLAS.channel)
+	and hasAtlas(CAST_ATLAS.locked) and hasAtlas(CAST_ATLAS.failed)
+local SHIELD_ATLAS = hasAtlas("nameplates-InterruptShield") and "nameplates-InterruptShield"
+local ELITE_ATLAS = hasAtlas("nameplates-icon-elite-gold") and "nameplates-icon-elite-gold"
+local RARE_ATLAS = hasAtlas("nameplates-icon-elite-silver") and "nameplates-icon-elite-silver"
 
 local GetDebuffData
 if C_UnitAuras and C_UnitAuras.GetDebuffDataByIndex then
@@ -22,44 +56,59 @@ else
 end
 
 local GetDifficultyColor = GetCreatureDifficultyColor or GetQuestDifficultyColor
+local UnitIsTapDenied = UnitIsTapDenied or function()
+	return false
+end
 
 local CLASSIFICATION_SUFFIX = {
 	elite = "+",
-	rareelite = " R+",
-	rare = " R",
-	worldboss = " B",
+	rareelite = "+",
+	rare = "",
+	worldboss = "",
 }
 
+local function fontFile()
+	local object = SystemFont_NamePlate or GameFontNormalSmall
+	return (object and object:GetFont()) or STANDARD_TEXT_FONT
+end
+
+local function setFont(fs, size)
+	fs:SetFont(fontFile(), size, "")
+	fs:SetShadowColor(0, 0, 0, 1)
+	fs:SetShadowOffset(1, -1)
+end
+
 local function abbreviate(n)
-	if n >= 1e6 then
+	if AbbreviateLargeNumbers then
+		return AbbreviateLargeNumbers(n)
+	end
+	n = known(n)
+	if not n then
+		return ""
+	elseif n >= 1e6 then
 		return format("%.1fm", n / 1e6)
 	elseif n >= 1e4 then
 		return format("%.0fk", n / 1e3)
-	elseif n >= 1e3 then
-		return format("%.1fk", n / 1e3)
 	end
 	return tostring(n)
 end
 
-local function setFont(fs, size)
-	fs:SetFont(STANDARD_TEXT_FONT, size, "OUTLINE")
-	fs:SetShadowOffset(0, 0)
+local function addBorder(frame, anchor)
+	local border = frame:CreateTexture(nil, "BACKGROUND", nil, -8)
+	border:SetTexture(SOLID)
+	border:SetVertexColor(0, 0, 0, 1)
+	border:SetPoint("TOPLEFT", anchor or frame, -1, 1)
+	border:SetPoint("BOTTOMRIGHT", anchor or frame, 1, -1)
+	return border
 end
 
 local function createBar(parent)
 	local bar = CreateFrame("StatusBar", nil, parent)
 	bar:SetStatusBarTexture(BAR_TEXTURE)
-
-	bar.border = bar:CreateTexture(nil, "BACKGROUND", nil, -8)
-	bar.border:SetTexture(BAR_TEXTURE)
-	bar.border:SetVertexColor(0, 0, 0, 1)
-	bar.border:SetPoint("TOPLEFT", -1, 1)
-	bar.border:SetPoint("BOTTOMRIGHT", 1, -1)
-
+	bar.border = addBorder(bar)
 	bar.bg = bar:CreateTexture(nil, "BACKGROUND", nil, 0)
 	bar.bg:SetTexture(BAR_TEXTURE)
 	bar.bg:SetAllPoints()
-
 	return bar
 end
 
@@ -92,51 +141,67 @@ function ns:GetPlate(nameplate)
 	plate.health = createBar(plate)
 	plate.health:SetAllPoints()
 
+	plate.selection = plate.health:CreateTexture(nil, "BACKGROUND", nil, -7)
+	plate.selection:SetTexture(SOLID)
+	plate.selection:SetVertexColor(1, 1, 1, 0.9)
+	plate.selection:SetPoint("TOPLEFT", -2, 2)
+	plate.selection:SetPoint("BOTTOMRIGHT", 2, -2)
+	plate.selection:Hide()
+	plate.health.border:SetDrawLayer("BACKGROUND", -6)
+
 	plate.healthText = plate.health:CreateFontString(nil, "OVERLAY")
-	plate.healthText:SetPoint("RIGHT", -2, 0)
+	plate.healthText:SetPoint("CENTER", 0, 0)
 
 	plate.name = plate:CreateFontString(nil, "OVERLAY")
-	plate.name:SetPoint("BOTTOMLEFT", plate.health, "TOPLEFT", 0, 3)
-	plate.name:SetJustifyH("LEFT")
+	plate.name:SetPoint("BOTTOM", plate.health, "TOP", 0, 3)
 	plate.name:SetWordWrap(false)
 
-	plate.level = plate:CreateFontString(nil, "OVERLAY")
-	plate.level:SetPoint("BOTTOMRIGHT", plate.health, "TOPRIGHT", 0, 3)
-	plate.name:SetPoint("RIGHT", plate.level, "LEFT", -4, 0)
+	plate.level = plate.health:CreateFontString(nil, "OVERLAY")
+	plate.level:SetPoint("LEFT", plate.health, "RIGHT", 4, 0)
+
+	plate.elite = plate.health:CreateTexture(nil, "OVERLAY")
+	plate.elite:SetSize(14, 14)
+	plate.elite:SetPoint("LEFT", plate.level, "RIGHT", 1, 0)
+	plate.elite:Hide()
 
 	plate.raidIcon = plate:CreateTexture(nil, "OVERLAY")
-	plate.raidIcon:SetTexture(RAID_ICONS)
+	plate.raidIcon:SetTexture("Interface\\TargetingFrame\\UI-RaidTargetingIcons")
 	plate.raidIcon:SetSize(22, 22)
-	plate.raidIcon:SetPoint("LEFT", plate.health, "RIGHT", 6, 0)
+	plate.raidIcon:SetPoint("RIGHT", plate.health, "LEFT", -22, 0)
 
 	plate.cast = createBar(plate)
-	plate.cast:SetPoint("TOPLEFT", plate.health, "BOTTOMLEFT", 0, -3)
-	plate.cast:SetPoint("TOPRIGHT", plate.health, "BOTTOMRIGHT", 0, -3)
-	plate.cast.bg:SetVertexColor(0.1, 0.1, 0.1, 0.85)
+	plate.cast:SetPoint("TOPLEFT", plate.health, "BOTTOMLEFT", 0, -4)
+	plate.cast:SetPoint("TOPRIGHT", plate.health, "BOTTOMRIGHT", 0, -4)
+	plate.cast.bg:SetVertexColor(0, 0, 0, 0.6)
 	plate.cast:Hide()
 	plate.cast:SetScript("OnUpdate", function(bar)
 		plate:OnCastUpdate(bar)
 	end)
 
+	plate.cast.spark = plate.cast:CreateTexture(nil, "OVERLAY")
+	plate.cast.spark:SetTexture(SPARK)
+	plate.cast.spark:SetBlendMode("ADD")
+	plate.cast.spark:SetWidth(16)
+
 	plate.cast.icon = plate.cast:CreateTexture(nil, "OVERLAY")
 	plate.cast.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
-	plate.cast.icon:SetPoint("TOPRIGHT", plate.health, "TOPLEFT", -3, 0)
-	plate.cast.icon:SetPoint("BOTTOMRIGHT", plate.cast, "BOTTOMLEFT", -3, 0)
+	plate.cast.icon:SetPoint("RIGHT", plate.cast, "LEFT", -3, 0)
+	plate.cast.iconBorder = addBorder(plate.cast, plate.cast.icon)
+	plate.cast.iconBorder:SetDrawLayer("ARTWORK")
 
-	plate.cast.iconBorder = plate.cast:CreateTexture(nil, "ARTWORK")
-	plate.cast.iconBorder:SetTexture(BAR_TEXTURE)
-	plate.cast.iconBorder:SetVertexColor(0, 0, 0, 1)
-	plate.cast.iconBorder:SetPoint("TOPLEFT", plate.cast.icon, -1, 1)
-	plate.cast.iconBorder:SetPoint("BOTTOMRIGHT", plate.cast.icon, 1, -1)
+	plate.cast.shield = plate.cast:CreateTexture(nil, "OVERLAY", nil, 1)
+	if SHIELD_ATLAS then
+		plate.cast.shield:SetAtlas(SHIELD_ATLAS)
+	end
+	plate.cast.shield:SetPoint("CENTER", plate.cast.icon, "CENTER")
+	plate.cast.shield:Hide()
 
 	plate.cast.text = plate.cast:CreateFontString(nil, "OVERLAY")
-	plate.cast.text:SetPoint("LEFT", 2, 0)
-	plate.cast.text:SetPoint("RIGHT", -28, 0)
-	plate.cast.text:SetJustifyH("LEFT")
+	plate.cast.text:SetPoint("TOP", plate.cast, "BOTTOM", 0, -2)
 	plate.cast.text:SetWordWrap(false)
 
 	plate.cast.timer = plate.cast:CreateFontString(nil, "OVERLAY")
-	plate.cast.timer:SetPoint("RIGHT", -2, 0)
+	plate.cast.timer:SetPoint("LEFT", plate.cast, "RIGHT", 4, 0)
 
 	plate.debuffs = CreateFrame("Frame", nil, plate)
 	plate.debuffs:SetSize(1, 1)
@@ -162,16 +227,20 @@ function Plate:ApplyLayout()
 	local db = ns.db
 	self:SetSize(db.width, db.height)
 	self.cast:SetHeight(db.castHeight)
+	self.cast.spark:SetHeight(db.castHeight * 2.5)
+	self.cast.icon:SetSize(db.castHeight + 4, db.castHeight + 4)
+	self.cast.shield:SetSize(db.castHeight * 1.6, db.castHeight * 2)
+	self.cast.text:SetWidth(db.width)
+	self.name:SetWidth(db.width + 40)
 	setFont(self.name, db.fontSize)
-	setFont(self.level, db.fontSize)
-	setFont(self.healthText, db.fontSize - 1)
+	setFont(self.level, db.fontSize - 1)
+	setFont(self.healthText, db.fontSize - 2)
 	setFont(self.cast.text, db.fontSize - 1)
-	setFont(self.cast.timer, db.fontSize - 1)
-	self.cast.icon:SetWidth(db.height + db.castHeight + 3)
+	setFont(self.cast.timer, db.fontSize - 2)
 	self.debuffs:ClearAllPoints()
 	self.debuffs:SetPoint("BOTTOM", self.health, "TOP", 0, db.fontSize + 7)
 	for _, icon in ipairs(self.debuffs.icons) do
-		icon:SetSize(db.debuffSize, db.debuffSize * 0.8)
+		icon:SetSize(db.debuffSize, db.debuffSize * 0.75)
 		setFont(icon.count, db.fontSize - 1)
 	end
 end
@@ -192,30 +261,40 @@ function Plate:ClearUnit()
 	self:Hide()
 end
 
+local UPDATE_ORDER = { "UpdateHealth", "UpdateName", "UpdateTarget", "UpdateRaidIcon", "UpdateDebuffs", "UpdateCast" }
+
 function Plate:UpdateAll()
 	if not self.unit then
 		return
 	end
-	self:UpdateName()
-	self:UpdateHealth()
-	self:UpdateTarget()
-	self:UpdateRaidIcon()
-	self:UpdateDebuffs()
-	self:UpdateCast()
+	for _, method in ipairs(UPDATE_ORDER) do
+		safeCall(self[method], self)
+	end
 end
 
 function Plate:UpdateName()
 	local unit = self.unit
 	self.name:SetText(UnitName(unit) or "")
+	self.name:SetTextColor(1, 1, 1)
 
-	if not ns.db.showLevel then
+	self.elite:Hide()
+	local level = known(UnitLevel(unit))
+	if not ns.db.showLevel or not level then
 		self.level:SetText("")
 		return
 	end
 
-	local level = UnitLevel(unit)
-	local suffix = CLASSIFICATION_SUFFIX[UnitClassification(unit)] or ""
-	if level == -1 then
+	local classification = known(UnitClassification(unit))
+	local suffix = classification and CLASSIFICATION_SUFFIX[classification] or ""
+	local icon = (classification == "elite" or classification == "worldboss") and ELITE_ATLAS
+		or ((classification == "rare" or classification == "rareelite") and RARE_ATLAS)
+	if icon then
+		self.elite:SetAtlas(icon)
+		self.elite:Show()
+		suffix = ""
+	end
+
+	if level < 0 then
 		self.level:SetText("??" .. suffix)
 		self.level:SetTextColor(1, 0.1, 0.1)
 	else
@@ -225,23 +304,33 @@ function Plate:UpdateName()
 	end
 end
 
+-- Returns the health percent as a plain number, or nil when the game hides it.
+function Plate:GetHealthPercent()
+	local cur, max = known(UnitHealth(self.unit)), known(UnitHealthMax(self.unit))
+	if cur and max and max > 0 then
+		return cur / max * 100
+	end
+end
+
 function Plate:UpdateHealth()
 	local unit = self.unit
 	local cur, max = UnitHealth(unit), UnitHealthMax(unit)
-	if max == 0 then
-		max = 1
-	end
 	self.health:SetMinMaxValues(0, max)
 	self.health:SetValue(cur)
 
-	local pct = cur / max * 100
 	local mode = ns.db.healthText
-	if mode == "percent" then
-		self.healthText:SetFormattedText("%d%%", pct + 0.5)
+	local pct = self:GetHealthPercent()
+	local displayPct = pct
+	if not displayPct and UnitHealthPercent and CurveConstants and CurveConstants.ScaleTo100 then
+		displayPct = UnitHealthPercent(unit, false, CurveConstants.ScaleTo100)
+	end
+
+	if mode == "percent" and displayPct then
+		self.healthText:SetFormattedText("%.0f%%", displayPct)
 	elseif mode == "value" then
 		self.healthText:SetText(abbreviate(cur))
-	elseif mode == "both" then
-		self.healthText:SetFormattedText("%s  %d%%", abbreviate(cur), pct + 0.5)
+	elseif mode == "both" and displayPct then
+		self.healthText:SetFormattedText("%s - %.0f%%", abbreviate(cur), displayPct)
 	else
 		self.healthText:SetText("")
 	end
@@ -251,10 +340,10 @@ end
 
 function Plate:GetThreatColor()
 	local unit = self.unit
-	if not ns.db.threatColors or UnitIsPlayer(unit) or not UnitAffectingCombat(unit) then
+	if not ns.db.threatColors or known(UnitIsPlayer(unit)) ~= false or not known(UnitAffectingCombat(unit)) then
 		return
 	end
-	local status = UnitThreatSituation("player", unit)
+	local status = known(UnitThreatSituation("player", unit))
 	if not status then
 		return
 	end
@@ -277,17 +366,17 @@ end
 function Plate:GetBaseColor()
 	local unit = self.unit
 	local c = ns.colors
-	if UnitIsPlayer(unit) then
+	if known(UnitIsPlayer(unit)) then
 		if ns.db.classColors then
 			local _, class = UnitClass(unit)
-			local cc = class and RAID_CLASS_COLORS[class]
+			local cc = known(class) and RAID_CLASS_COLORS[class]
 			if cc then
 				return { cc.r, cc.g, cc.b }
 			end
 		end
-		return UnitIsFriend("player", unit) and c.friendlyPlayer or c.hostile
+		return known(UnitIsFriend("player", unit)) and c.friendlyPlayer or c.hostile
 	end
-	local reaction = UnitReaction(unit, "player") or 4
+	local reaction = known(UnitReaction(unit, "player")) or 4
 	if reaction <= 3 then
 		return c.hostile
 	elseif reaction == 4 then
@@ -302,17 +391,13 @@ function Plate:UpdateHealthColor(pct)
 		return
 	end
 	local db, c = ns.db, ns.colors
-
-	if not pct then
-		local max = UnitHealthMax(unit)
-		pct = max > 0 and UnitHealth(unit) / max * 100 or 100
-	end
+	pct = pct or self:GetHealthPercent()
 
 	local color
-	if UnitIsTapDenied(unit) then
+	if known(UnitIsTapDenied(unit)) then
 		color = c.tapped
-	elseif db.executeHighlight and not db.tankMode and pct > 0 and pct <= db.executePercent
-		and UnitCanAttack("player", unit) then
+	elseif db.executeHighlight and not db.tankMode and pct and pct > 0 and pct <= db.executePercent
+		and known(UnitCanAttack("player", unit)) then
 		color = c.execute
 	else
 		color = self:GetThreatColor() or self:GetBaseColor()
@@ -320,25 +405,15 @@ function Plate:UpdateHealthColor(pct)
 
 	local r, g, b = color[1], color[2], color[3]
 	self.health:SetStatusBarColor(r, g, b)
-	self.health.bg:SetVertexColor(r * 0.2, g * 0.2, b * 0.2, 0.9)
-	self.name:SetTextColor(1, 1, 1)
+	self.health.bg:SetVertexColor(r * 0.25, g * 0.25, b * 0.25, 0.85)
 end
 
 function Plate:UpdateTarget()
-	local isTarget = UnitIsUnit(self.unit, "target")
-	if isTarget then
-		self.health.border:SetVertexColor(1, 1, 1, 1)
-		self.health.border:SetPoint("TOPLEFT", -2, 2)
-		self.health.border:SetPoint("BOTTOMRIGHT", 2, -2)
-	else
-		self.health.border:SetVertexColor(0, 0, 0, 1)
-		self.health.border:SetPoint("TOPLEFT", -1, 1)
-		self.health.border:SetPoint("BOTTOMRIGHT", 1, -1)
-	end
+	self.selection:SetShown(known(UnitIsUnit(self.unit, "target")) == true)
 end
 
 function Plate:UpdateRaidIcon()
-	local index = GetRaidTargetIndex(self.unit)
+	local index = known(GetRaidTargetIndex(self.unit))
 	if index then
 		SetRaidTargetIconTexture(self.raidIcon, index)
 		self.raidIcon:Show()
@@ -354,15 +429,11 @@ function Plate:GetDebuffIcon(i)
 	end
 
 	local icon = CreateFrame("Frame", nil, self.debuffs)
-	icon.border = icon:CreateTexture(nil, "BACKGROUND")
-	icon.border:SetTexture(BAR_TEXTURE)
-	icon.border:SetVertexColor(0, 0, 0, 1)
-	icon.border:SetPoint("TOPLEFT", -1, 1)
-	icon.border:SetPoint("BOTTOMRIGHT", 1, -1)
+	addBorder(icon)
 
 	icon.texture = icon:CreateTexture(nil, "ARTWORK")
 	icon.texture:SetAllPoints()
-	icon.texture:SetTexCoord(0.08, 0.92, 0.18, 0.82)
+	icon.texture:SetTexCoord(0.08, 0.92, 0.2, 0.8)
 
 	icon.cooldown = CreateFrame("Cooldown", nil, icon, "CooldownFrameTemplate")
 	icon.cooldown:SetAllPoints()
@@ -372,7 +443,7 @@ function Plate:GetDebuffIcon(i)
 	icon.count = icon.cooldown:CreateFontString(nil, "OVERLAY")
 	icon.count:SetPoint("BOTTOMRIGHT", 2, -1)
 
-	icon:SetSize(ns.db.debuffSize, ns.db.debuffSize * 0.8)
+	icon:SetSize(ns.db.debuffSize, ns.db.debuffSize * 0.75)
 	setFont(icon.count, ns.db.fontSize - 1)
 	icons[i] = icon
 	return icon
@@ -383,7 +454,7 @@ function Plate:UpdateDebuffs()
 	local db = ns.db
 	local shown = 0
 
-	if db.showDebuffs and UnitCanAttack("player", unit) then
+	if db.showDebuffs and known(UnitCanAttack("player", unit)) then
 		for index = 1, 40 do
 			if shown >= db.maxDebuffs then
 				break
@@ -395,8 +466,9 @@ function Plate:UpdateDebuffs()
 			shown = shown + 1
 			local icon = self:GetDebuffIcon(shown)
 			icon.texture:SetTexture(texture)
+			count, duration, expirationTime = known(count), known(duration), known(expirationTime)
 			icon.count:SetText(count and count > 1 and count or "")
-			if duration and duration > 0 then
+			if duration and expirationTime and duration > 0 then
 				icon.cooldown:SetCooldown(expirationTime - duration, duration)
 			else
 				icon.cooldown:Clear()
@@ -418,6 +490,19 @@ function Plate:UpdateDebuffs()
 	end
 end
 
+function Plate:SetCastStyle(kind)
+	local cast = self.cast
+	if useCastAtlas then
+		cast:SetStatusBarTexture(CAST_ATLAS[kind])
+		cast:SetStatusBarColor(1, 1, 1)
+	else
+		local color = ns.colors[kind]
+		cast:SetStatusBarTexture(BAR_TEXTURE)
+		cast:SetStatusBarColor(color[1], color[2], color[3])
+	end
+	cast.shield:SetShown(kind == "locked" and SHIELD_ATLAS ~= nil)
+end
+
 function Plate:UpdateCast()
 	local unit = self.unit
 	local cast = self.cast
@@ -428,12 +513,12 @@ function Plate:UpdateCast()
 
 	local name, _, texture, startMS, endMS, _, castID, notInterruptible = UnitCastingInfo(unit)
 	local channel = false
-	if not name then
+	if not issecretvalue(name) and name == nil then
 		castID = nil
 		name, _, texture, startMS, endMS, _, notInterruptible = UnitChannelInfo(unit)
-		channel = name ~= nil
+		channel = true
 	end
-	if not name then
+	if not issecretvalue(name) and name == nil then
 		if not self.castFailedUntil then
 			cast:Hide()
 		end
@@ -442,15 +527,28 @@ function Plate:UpdateCast()
 
 	self.castFailedUntil = nil
 	cast.channel = channel
-	cast.castID = castID
-	cast.startTime = startMS / 1000
-	cast.endTime = endMS / 1000
-	cast:SetMinMaxValues(0, cast.endTime - cast.startTime)
+	cast.castID = known(castID)
 	cast.text:SetText(name)
 	cast.icon:SetTexture(texture)
+	cast.timer:SetText("")
 
-	local color = notInterruptible and ns.colors.castLocked or (channel and ns.colors.channel or ns.colors.cast)
-	cast:SetStatusBarColor(color[1], color[2], color[3])
+	startMS, endMS = known(startMS), known(endMS)
+	if startMS and endMS then
+		cast.startTime = startMS / 1000
+		cast.endTime = endMS / 1000
+		cast:SetMinMaxValues(0, cast.endTime - cast.startTime)
+	else
+		local durationFn = channel and UnitChannelDuration or UnitCastingDuration
+		if not (durationFn and cast.SetTimerDuration) then
+			cast:Hide()
+			return
+		end
+		cast.endTime = nil
+		cast:SetTimerDuration(durationFn(unit))
+	end
+
+	local locked = known(notInterruptible)
+	self:SetCastStyle(locked and "locked" or (channel and "channel" or "cast"))
 	cast:Show()
 	self:OnCastUpdate(cast)
 end
@@ -464,13 +562,21 @@ function Plate:OnCastUpdate(cast)
 		end
 		return
 	end
+	if not cast.endTime then
+		cast.spark:Hide()
+		return
+	end
 	if now >= cast.endTime then
 		cast:Hide()
 		return
 	end
 	local remaining = cast.endTime - now
-	cast:SetValue(cast.channel and remaining or (now - cast.startTime))
+	local total = cast.endTime - cast.startTime
+	local value = cast.channel and remaining or (now - cast.startTime)
+	cast:SetValue(value)
 	cast.timer:SetFormattedText("%.1f", remaining)
+	cast.spark:SetPoint("CENTER", cast, "LEFT", cast:GetWidth() * value / total, 0)
+	cast.spark:Show()
 end
 
 function Plate:StopCast()
@@ -485,12 +591,14 @@ function Plate:FailCast(castGUID)
 		return
 	end
 	-- FAILED also fires for casts the unit tried and never started; ignore those.
+	castGUID = known(castGUID)
 	if cast.castID and castGUID and castGUID ~= cast.castID then
 		return
 	end
-	local c = ns.colors.castFailed
-	cast:SetStatusBarColor(c[1], c[2], c[3])
-	cast:SetValue(select(2, cast:GetMinMaxValues()))
+	self:SetCastStyle("failed")
+	cast:SetMinMaxValues(0, 1)
+	cast:SetValue(1)
+	cast.spark:Hide()
 	cast.text:SetText(INTERRUPTED or "Interrupted")
 	cast.timer:SetText("")
 	self.castFailedUntil = GetTime() + FAIL_DISPLAY_TIME

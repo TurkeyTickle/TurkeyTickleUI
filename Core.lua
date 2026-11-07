@@ -20,19 +20,19 @@ ns.defaults = {
 }
 
 ns.colors = {
-	hostile = { 0.85, 0.20, 0.20 },
-	neutral = { 0.95, 0.80, 0.25 },
-	friendly = { 0.30, 0.75, 0.30 },
-	friendlyPlayer = { 0.30, 0.55, 0.95 },
-	tapped = { 0.55, 0.55, 0.55 },
-	threatGood = { 0.25, 0.60, 1.00 },
-	threatWarn = { 1.00, 0.55, 0.10 },
-	threatBad = { 1.00, 0.10, 0.10 },
-	execute = { 0.75, 0.25, 0.90 },
-	cast = { 1.00, 0.75, 0.15 },
-	channel = { 0.35, 0.80, 1.00 },
-	castLocked = { 0.60, 0.60, 0.60 },
-	castFailed = { 0.90, 0.15, 0.15 },
+	hostile = { 1.00, 0.00, 0.00 },
+	neutral = { 1.00, 1.00, 0.00 },
+	friendly = { 0.00, 1.00, 0.00 },
+	friendlyPlayer = { 0.00, 0.44, 0.87 },
+	tapped = { 0.50, 0.50, 0.50 },
+	threatGood = { 0.00, 0.60, 1.00 },
+	threatWarn = { 1.00, 0.60, 0.00 },
+	threatBad = { 1.00, 0.25, 0.75 },
+	execute = { 0.60, 0.35, 1.00 },
+	cast = { 1.00, 0.70, 0.00 },
+	channel = { 0.00, 1.00, 0.00 },
+	locked = { 0.70, 0.70, 0.70 },
+	failed = { 1.00, 0.00, 0.00 },
 }
 
 ns.plates = {}
@@ -163,11 +163,12 @@ driver:SetScript("OnEvent", function(_, event, unit, ...)
 	local method = unitHandlers[event]
 	if method then
 		if isPlateUnit(unit) then
-			ns.plates[unit][method](ns.plates[unit], ...)
+			local plate = ns.plates[unit]
+			xpcall(plate[method], geterrorhandler(), plate, ...)
 		end
 		return
 	end
-	globalHandlers[event](unit, ...)
+	xpcall(globalHandlers[event], geterrorhandler(), unit, ...)
 end)
 
 for event in pairs(globalHandlers) do
