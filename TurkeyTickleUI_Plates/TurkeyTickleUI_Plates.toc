@@ -1,0 +1,13 @@
+## Interface: 16001
+## Title: |cffe8a33dTurkey Tickle UI|r: Plates
+## Notes: Clean, Blizzard-style nameplates with threat warnings, cast bars and your debuffs.
+## Author: TurkeyTickle
+## Version: 0.2.0
+## Category: Turkey Tickle UI
+## Group: TurkeyTickleUI
+## IconTexture: Interface\Icons\Ability_Hunter_SniperShot
+## SavedVariables: TurkeyTickleUI_PlatesDB
+
+Core.lua
+Plate.lua
+Config.lua

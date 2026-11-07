@@ -10,6 +10,37 @@ local HEALTH_TEXT_LABELS = {
 
 local widgets = {}
 
+local SUITE_NAME = "Turkey Tickle UI"
+
+-- Every Turkey Tickle UI addon hangs its options page under one shared settings category.
+TurkeyTickleUI = TurkeyTickleUI or {}
+
+local function getSuiteCategory()
+	local suite = TurkeyTickleUI
+	if suite.settingsCategory or suite.settingsPanel then
+		return suite.settingsCategory
+	end
+
+	local panel = CreateFrame("Frame")
+	panel.name = SUITE_NAME
+	panel:Hide()
+	local title = panel:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
+	title:SetPoint("TOPLEFT", 16, -16)
+	title:SetText(SUITE_NAME)
+	local hint = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+	hint:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -8)
+	hint:SetText("Pick a module from the list on the left.")
+	suite.settingsPanel = panel
+
+	if Settings and Settings.RegisterCanvasLayoutCategory then
+		suite.settingsCategory = Settings.RegisterCanvasLayoutCategory(panel, SUITE_NAME)
+		Settings.RegisterAddOnCategory(suite.settingsCategory)
+	elseif InterfaceOptions_AddCategory then
+		InterfaceOptions_AddCategory(panel)
+	end
+	return suite.settingsCategory
+end
+
 local function onChanged()
 	ns:RefreshAll()
 end
@@ -117,17 +148,18 @@ end
 
 function ns:CreateOptions()
 	local panel = CreateFrame("Frame")
-	panel.name = "ForeverPlates"
+	panel.name = "Plates"
+	panel.parent = SUITE_NAME
 	panel:Hide()
 
 	local title = panel:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
 	title:SetPoint("TOPLEFT", 16, -16)
-	title:SetText("ForeverPlates")
+	title:SetText(SUITE_NAME .. ": Plates")
 
 	local version = C_AddOns and C_AddOns.GetAddOnMetadata and C_AddOns.GetAddOnMetadata(ADDON, "Version")
 	local subtitle = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
 	subtitle:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -6)
-	subtitle:SetText((version and ("v" .. version .. "  ") or "") .. "Type /fp to open this panel, /fp tank to toggle tank mode.")
+	subtitle:SetText((version and ("v" .. version .. "  ") or "") .. "Type /ttp to open this panel, /ttp tank to toggle tank mode.")
 
 	local left = {
 		createCheckbox(panel, "styleFriendly", "Style friendly nameplates",
@@ -182,7 +214,7 @@ function ns:CreateOptions()
 	reset:SetPoint("BOTTOMLEFT", 16, 16)
 	reset:SetText(RESET_TO_DEFAULT or "Reset to defaults")
 	reset:SetScript("OnClick", function()
-		SlashCmdList.FOREVERPLATES("reset")
+		SlashCmdList.TURKEYTICKLEUI_PLATES("reset")
 		panel:GetScript("OnShow")()
 	end)
 
@@ -192,11 +224,10 @@ function ns:CreateOptions()
 		end
 	end)
 
-	if Settings and Settings.RegisterCanvasLayoutCategory then
-		local category = Settings.RegisterCanvasLayoutCategory(panel, panel.name)
-		Settings.RegisterAddOnCategory(category)
-		self.optionsCategory = category
+	if Settings and Settings.RegisterCanvasLayoutSubcategory then
+		self.optionsCategory = Settings.RegisterCanvasLayoutSubcategory(getSuiteCategory(), panel, panel.name)
 	elseif InterfaceOptions_AddCategory then
+		getSuiteCategory()
 		InterfaceOptions_AddCategory(panel)
 	end
 	self.optionsPanel = panel

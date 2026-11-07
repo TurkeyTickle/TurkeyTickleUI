@@ -54,7 +54,12 @@ SOUNDKIT = { RAID_WARNING = 8959 }
 C_Timer = { After = function(_, fn) fn() end, NewTicker = function() return { Cancel = function() end } end }
 C_AddOns = { GetAddOnMetadata = function() return "0.1.0" end }
 C_Texture = { GetAtlasInfo = function() return nil end }
-Settings = { RegisterCanvasLayoutCategory = function() return stub() end, RegisterAddOnCategory = function() end }
+Settings = {
+	RegisterCanvasLayoutCategory = function() return stub() end,
+	RegisterCanvasLayoutSubcategory = function() return stub() end,
+	RegisterAddOnCategory = function() end,
+	OpenToCategory = function() end,
+}
 local nameplate = stub()
 nameplate.UnitFrame = stub()
 rawset(nameplate, "ForeverPlate", false)
@@ -94,12 +99,12 @@ function PlaySound(id) print("PlaySound", id) end
 local ns = {}
 for _, file in ipairs({ "Core.lua", "Plate.lua", "Config.lua" }) do
 	local chunk = assert(loadfile(arg[1] .. "/" .. file))
-	chunk("ForeverPlates", ns)
+	chunk("TurkeyTickleUI_Plates", ns)
 end
 
 local driver = ns.driver
 local fire = function(...) driver.scripts.OnEvent(driver, ...) end
-fire("ADDON_LOADED", "ForeverPlates")
+fire("ADDON_LOADED", "TurkeyTickleUI_Plates")
 fire("PLAYER_ENTERING_WORLD")
 fire("NAME_PLATE_UNIT_ADDED", "nameplate1")
 print("styled:", ns.plates.nameplate1 ~= nil)
@@ -109,5 +114,6 @@ THREAT = { true, 3, 100, 100 }
 fire("UNIT_THREAT_LIST_UPDATE", "nameplate1")
 fire("UNIT_HEALTH", "nameplate1")
 fire("NAME_PLATE_UNIT_REMOVED", "nameplate1")
-SlashCmdList.FOREVERPLATES("threat")
+SlashCmdList.TURKEYTICKLEUI_PLATES("threat")
+SlashCmdList.TURKEYTICKLEUI_PLATES("")
 print("done")

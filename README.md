@@ -1,37 +1,30 @@
-# ForeverPlates
+# Turkey Tickle UI
 
-Clean, readable nameplates for **World of Warcraft: Forever** (interface `16001`).
+A suite of UI addons for **World of Warcraft: Forever**. Each module is its own addon, so you can
+enable only the ones you want.
 
-## Features
-
-- Flat health bars colored by reaction, class (players), or tapped state
-- Threat glow: orange with your threat % when you're close to pulling, red when the mob is on you
-  (**tank mode** flips it to warn when you're losing aggro)
-- Execute-range highlight (configurable threshold)
-- Cast bars with spell icon, name, timer, uninterruptible tint, and an "Interrupted" flash
-- Your own debuffs on enemy plates with cooldown swipes and stack counts
-- Level with difficulty color and elite / rare / boss tag
-- Target highlight border and raid target icons
-- In-game options panel; everything applies live
+| Module | Folder | Description |
+| ------ | ------ | ----------- |
+| [Plates](TurkeyTickleUI_Plates) | `TurkeyTickleUI_Plates` | Blizzard-style nameplates with threat warnings, cast bars and debuffs |
 
 ## Install
 
-Copy or symlink this folder into:
+Copy (or symlink) each module folder into:
 
 ```
-World of Warcraft/_forever_/Interface/AddOns/ForeverPlates
+World of Warcraft/_forever_/Interface/AddOns/
 ```
 
-## Usage
+All modules share one **Turkey Tickle UI** page in the in-game AddOns options.
 
-| Command     | Action               |
-| ----------- | -------------------- |
-| `/fp`       | Open the options     |
-| `/fp tank`  | Toggle tank mode     |
-| `/fp reset` | Reset all settings   |
+## Development
 
-Nameplate visibility, stacking, and range are still controlled by the game's own
-nameplate settings (Interface > Names, or the `nameplate*` CVars).
+`tests/harness.lua` loads a module in a stubbed WoW environment to catch load and runtime errors
+outside the game:
+
+```
+luajit tests/harness.lua TurkeyTickleUI_Plates
+```
 
 ## License
 

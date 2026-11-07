@@ -48,7 +48,7 @@ local function copyDefaults(dst, src)
 end
 
 function ns:Print(msg)
-	print("|cff66ccffForeverPlates|r: " .. msg)
+	print("|cffe8a33dTurkey Tickle UI|r Plates: " .. msg)
 end
 
 function ns:ForEachPlate(fn)
@@ -185,9 +185,9 @@ function globalHandlers.ADDON_LOADED(name)
 	if name ~= ADDON then
 		return
 	end
-	ForeverPlatesDB = ForeverPlatesDB or {}
-	copyDefaults(ForeverPlatesDB, ns.defaults)
-	ns.db = ForeverPlatesDB
+	TurkeyTickleUI_PlatesDB = TurkeyTickleUI_PlatesDB or {}
+	copyDefaults(TurkeyTickleUI_PlatesDB, ns.defaults)
+	ns.db = TurkeyTickleUI_PlatesDB
 	ns:CreateOptions()
 	driver:UnregisterEvent("ADDON_LOADED")
 end
@@ -277,9 +277,9 @@ for event in pairs(unitHandlers) do
 	pcall(driver.RegisterEvent, driver, event)
 end
 
-SLASH_FOREVERPLATES1 = "/fplates"
-SLASH_FOREVERPLATES2 = "/fp"
-SlashCmdList.FOREVERPLATES = function(msg)
+SLASH_TURKEYTICKLEUI_PLATES1 = "/ttplates"
+SLASH_TURKEYTICKLEUI_PLATES2 = "/ttp"
+SlashCmdList.TURKEYTICKLEUI_PLATES = function(msg)
 	msg = strtrim(msg or ""):lower()
 	if msg == "tank" then
 		ns.db.tankMode = not ns.db.tankMode
@@ -288,8 +288,8 @@ SlashCmdList.FOREVERPLATES = function(msg)
 	elseif msg == "threat" then
 		ns:DebugThreat()
 	elseif msg == "reset" then
-		wipe(ForeverPlatesDB)
-		copyDefaults(ForeverPlatesDB, ns.defaults)
+		wipe(TurkeyTickleUI_PlatesDB)
+		copyDefaults(TurkeyTickleUI_PlatesDB, ns.defaults)
 		ns:RefreshAll()
 		ns:Print("Settings reset.")
 	else

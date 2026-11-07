@@ -123,12 +123,12 @@ end
 
 local function hideBlizzardFrame(nameplate)
 	local uf = nameplate.UnitFrame
-	if not uf or uf.foreverPlatesHooked then
+	if not uf or uf.turkeyTicklePlatesHooked then
 		return
 	end
-	uf.foreverPlatesHooked = true
+	uf.turkeyTicklePlatesHooked = true
 	uf:HookScript("OnShow", function(self)
-		local plate = nameplate.ForeverPlate
+		local plate = nameplate.TurkeyTicklePlate
 		if plate and plate.unit then
 			self:Hide()
 		end
@@ -138,8 +138,8 @@ end
 local Plate = {}
 
 function ns:GetPlate(nameplate)
-	if nameplate.ForeverPlate then
-		return nameplate.ForeverPlate
+	if nameplate.TurkeyTicklePlate then
+		return nameplate.TurkeyTicklePlate
 	end
 
 	local plate = Mixin(CreateFrame("Frame", nil, nameplate), Plate)
@@ -253,14 +253,14 @@ function ns:GetPlate(nameplate)
 	plate.debuffs:SetSize(1, 1)
 	plate.debuffs.icons = {}
 
-	nameplate.ForeverPlate = plate
+	nameplate.TurkeyTicklePlate = plate
 	hideBlizzardFrame(nameplate)
 	plate:ApplyLayout()
 	return plate
 end
 
 function ns:RestoreBlizzard(nameplate)
-	local plate = nameplate.ForeverPlate
+	local plate = nameplate.TurkeyTicklePlate
 	if plate then
 		plate:ClearUnit()
 	end
