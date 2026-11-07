@@ -11,6 +11,7 @@ ns.defaults = {
 	classColors = true,
 	threatColors = true,
 	tankMode = false,
+	threatWarnPercent = 80,
 	executeHighlight = true,
 	executePercent = 20,
 	showDebuffs = true,
@@ -25,9 +26,8 @@ ns.colors = {
 	friendly = { 0.00, 1.00, 0.00 },
 	friendlyPlayer = { 0.00, 0.44, 0.87 },
 	tapped = { 0.50, 0.50, 0.50 },
-	threatGood = { 0.00, 0.60, 1.00 },
 	threatWarn = { 1.00, 0.60, 0.00 },
-	threatBad = { 1.00, 0.25, 0.75 },
+	threatAggro = { 1.00, 0.10, 0.10 },
 	execute = { 0.60, 0.35, 1.00 },
 	cast = { 1.00, 0.70, 0.00 },
 	channel = { 0.00, 1.00, 0.00 },
@@ -104,8 +104,8 @@ local unitHandlers = {
 	UNIT_NAME_UPDATE = "UpdateName",
 	UNIT_LEVEL = "UpdateName",
 	UNIT_FACTION = "UpdateAll",
-	UNIT_THREAT_SITUATION_UPDATE = "UpdateHealthColor",
-	UNIT_THREAT_LIST_UPDATE = "UpdateHealthColor",
+	UNIT_THREAT_SITUATION_UPDATE = "UpdateThreat",
+	UNIT_THREAT_LIST_UPDATE = "UpdateThreat",
 	UNIT_AURA = "UpdateDebuffs",
 	UNIT_SPELLCAST_START = "UpdateCast",
 	UNIT_SPELLCAST_DELAYED = "UpdateCast",
@@ -154,7 +154,7 @@ end
 
 function globalHandlers.PLAYER_REGEN_ENABLED()
 	ns:ForEachPlate(function(plate)
-		plate:UpdateHealthColor()
+		plate:UpdateThreat()
 	end)
 end
 globalHandlers.PLAYER_REGEN_DISABLED = globalHandlers.PLAYER_REGEN_ENABLED

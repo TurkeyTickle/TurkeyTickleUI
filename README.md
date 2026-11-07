@@ -5,7 +5,8 @@ Clean, readable nameplates for **World of Warcraft: Forever** (interface `16001`
 ## Features
 
 - Flat health bars colored by reaction, class (players), or tapped state
-- Threat coloring with a **tank mode** that inverts the colors
+- Threat glow: orange with your threat % when you're close to pulling, red when the mob is on you
+  (**tank mode** flips it to warn when you're losing aggro)
 - Execute-range highlight (configurable threshold)
 - Cast bars with spell icon, name, timer, uninterruptible tint, and an "Interrupted" flash
 - Your own debuffs on enemy plates with cooldown swipes and stack counts

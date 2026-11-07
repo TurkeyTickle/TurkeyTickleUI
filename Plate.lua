@@ -149,8 +149,18 @@ function ns:GetPlate(nameplate)
 	plate.selection:Hide()
 	plate.health.border:SetDrawLayer("BACKGROUND", -6)
 
+	plate.threatGlow = CreateFrame("Frame", nil, plate, "BackdropTemplate")
+	plate.threatGlow:SetFrameLevel(plate:GetFrameLevel())
+	plate.threatGlow:SetPoint("TOPLEFT", plate.health, -5, 5)
+	plate.threatGlow:SetPoint("BOTTOMRIGHT", plate.health, 5, -5)
+	plate.threatGlow:SetBackdrop({ edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border", edgeSize = 10 })
+	plate.threatGlow:Hide()
+
 	plate.healthText = plate.health:CreateFontString(nil, "OVERLAY")
 	plate.healthText:SetPoint("CENTER", 0, 0)
+
+	plate.threatText = plate.health:CreateFontString(nil, "OVERLAY")
+	plate.threatText:SetPoint("LEFT", 2, 0)
 
 	plate.name = plate:CreateFontString(nil, "OVERLAY")
 	plate.name:SetPoint("BOTTOM", plate.health, "TOP", 0, 3)
@@ -235,6 +245,7 @@ function Plate:ApplyLayout()
 	setFont(self.name, db.fontSize)
 	setFont(self.level, db.fontSize - 1)
 	setFont(self.healthText, db.fontSize - 2)
+	setFont(self.threatText, db.fontSize - 2)
 	setFont(self.cast.text, db.fontSize - 1)
 	setFont(self.cast.timer, db.fontSize - 2)
 	self.debuffs:ClearAllPoints()
@@ -261,7 +272,7 @@ function Plate:ClearUnit()
 	self:Hide()
 end
 
-local UPDATE_ORDER = { "UpdateHealth", "UpdateName", "UpdateTarget", "UpdateRaidIcon", "UpdateDebuffs", "UpdateCast" }
+local UPDATE_ORDER = { "UpdateHealth", "UpdateThreat", "UpdateName", "UpdateTarget", "UpdateRaidIcon", "UpdateDebuffs", "UpdateCast" }
 
 function Plate:UpdateAll()
 	if not self.unit then
@@ -338,28 +349,50 @@ function Plate:UpdateHealth()
 	self:UpdateHealthColor(pct)
 end
 
-function Plate:GetThreatColor()
+-- Returns the glow color and optional threat % text for this unit, or nil for no indicator.
+function Plate:GetThreatState()
 	local unit = self.unit
 	if not ns.db.threatColors or known(UnitIsPlayer(unit)) ~= false or not known(UnitAffectingCombat(unit)) then
 		return
 	end
-	local status = known(UnitThreatSituation("player", unit))
+	local isTanking, status, scaledPercent = UnitDetailedThreatSituation("player", unit)
+	isTanking, status, scaledPercent = known(isTanking), known(status), known(scaledPercent)
 	if not status then
 		return
 	end
 	local c = ns.colors
 	if ns.db.tankMode then
 		if status == 3 then
-			return c.threatGood
-		elseif status > 0 then
+			return
+		elseif status == 2 then
 			return c.threatWarn
 		end
-		return c.threatBad
+		return c.threatAggro
 	end
-	if status >= 2 then
-		return c.threatBad
-	elseif status == 1 then
-		return c.threatWarn
+	if isTanking or status >= 2 then
+		return c.threatAggro
+	end
+	if status == 1 or (scaledPercent and scaledPercent >= ns.db.threatWarnPercent) then
+		return c.threatWarn, scaledPercent
+	end
+end
+
+function Plate:UpdateThreat()
+	if not self.unit then
+		return
+	end
+	local color, percent = self:GetThreatState()
+	if color then
+		self.threatGlow:SetBackdropBorderColor(color[1], color[2], color[3], 1)
+		self.threatGlow:Show()
+	else
+		self.threatGlow:Hide()
+	end
+	if percent then
+		self.threatText:SetFormattedText("%.0f%%", percent)
+		self.threatText:SetTextColor(color[1], color[2], color[3])
+	else
+		self.threatText:SetText("")
 	end
 end
 
@@ -400,7 +433,7 @@ function Plate:UpdateHealthColor(pct)
 		and known(UnitCanAttack("player", unit)) then
 		color = c.execute
 	else
-		color = self:GetThreatColor() or self:GetBaseColor()
+		color = self:GetBaseColor()
 	end
 
 	local r, g, b = color[1], color[2], color[3]

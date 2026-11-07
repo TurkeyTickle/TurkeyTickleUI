@@ -134,10 +134,10 @@ function ns:CreateOptions()
 			"Turn off to keep Blizzard's default look on friendly units."),
 		createCheckbox(panel, "classColors", "Class colors for players"),
 		createCheckbox(panel, "showLevel", "Show level and elite/rare tag"),
-		createCheckbox(panel, "threatColors", "Threat colors",
-			"Color enemy health bars by your threat: orange when you're close to pulling aggro, pink when you have it."),
+		createCheckbox(panel, "threatColors", "Threat glow",
+			"Glow around enemy health bars: orange with your threat % when you're close to pulling, red when it's attacking you."),
 		createCheckbox(panel, "tankMode", "Tank mode",
-			"Invert threat colors: blue when you're holding aggro, orange when losing it, pink when something is on someone else."),
+			"Flip the threat glow: no glow while you hold aggro, orange when you're about to lose it, red when it's on someone else."),
 		createCheckbox(panel, "executeHighlight", "Execute range highlight",
 			"Color enemies purple below the execute threshold. Disabled in tank mode."),
 		createCheckbox(panel, "castBar", "Show cast bars"),
@@ -161,6 +161,7 @@ function ns:CreateOptions()
 		createSlider(panel, "debuffSize", "Debuff icon size", 12, 36, 1),
 		createSlider(panel, "maxDebuffs", "Max debuffs", 0, 10, 1),
 		createSlider(panel, "executePercent", "Execute threshold %", 5, 50, 1),
+		createSlider(panel, "threatWarnPercent", "Threat warning at %", 50, 100, 5),
 		createHealthTextButton(panel),
 	}
 	prev = nil
