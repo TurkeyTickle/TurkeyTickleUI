@@ -109,9 +109,36 @@ local BORDER_SIZE = #BORDER_STYLES.normal
 local Border = {}
 
 function Border:SetStyle(name)
-	for i, color in ipairs(BORDER_STYLES[name]) do
+	local colors = BORDER_STYLES[name]
+	for i, color in ipairs(colors) do
 		self[i]:SetVertexColor(color[1], color[2], color[3], 1)
 	end
+	local inner = colors[#colors]
+	for _, strip in ipairs(self.lip) do
+		strip:SetVertexColor(inner[1], inner[2], inner[3], 1)
+	end
+end
+
+-- The unit frame bar fill has a dark edge baked in, so the innermost bronze overlaps the fill by a pixel to hide it.
+local function addLip(frame, anchor)
+	local lip = {}
+	for _, side in ipairs({ { "TOPLEFT", "TOPRIGHT" }, { "BOTTOMLEFT", "BOTTOMRIGHT" } }) do
+		local strip = frame:CreateTexture(nil, "OVERLAY", nil, -8)
+		strip:SetTexture(SOLID)
+		strip:SetPoint(side[1], anchor)
+		strip:SetPoint(side[2], anchor)
+		strip:SetHeight(1)
+		tinsert(lip, strip)
+	end
+	for _, side in ipairs({ { "TOPLEFT", "BOTTOMLEFT" }, { "TOPRIGHT", "BOTTOMRIGHT" } }) do
+		local strip = frame:CreateTexture(nil, "OVERLAY", nil, -8)
+		strip:SetTexture(SOLID)
+		strip:SetPoint(side[1], anchor)
+		strip:SetPoint(side[2], anchor)
+		strip:SetWidth(1)
+		tinsert(lip, strip)
+	end
+	return lip
 end
 
 local function addBorder(frame, anchor)
@@ -125,6 +152,7 @@ local function addBorder(frame, anchor)
 		ring:SetPoint("BOTTOMRIGHT", anchor, inset, -inset)
 		border[i] = ring
 	end
+	border.lip = addLip(frame, anchor)
 	border:SetStyle("normal")
 	return border
 end
