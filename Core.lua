@@ -12,6 +12,7 @@ ns.defaults = {
 	threatColors = true,
 	tankMode = false,
 	threatWarnPercent = 80,
+	threatSound = true,
 	maxDistance = 60,
 	executeHighlight = true,
 	executePercent = 20,
@@ -80,6 +81,18 @@ function ns:OnPlateRemoved(unit)
 		plate:ClearUnit()
 		self.plates[unit] = nil
 	end
+end
+
+function ns:PlayThreatWarning()
+	if not self.db.threatSound then
+		return
+	end
+	local now = GetTime()
+	if self.lastThreatSound and now - self.lastThreatSound < 3 then
+		return
+	end
+	self.lastThreatSound = now
+	PlaySound(SOUNDKIT and SOUNDKIT.RAID_WARNING or 8959, "Master")
 end
 
 function ns:ApplyDistance()

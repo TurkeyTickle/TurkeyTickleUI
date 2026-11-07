@@ -149,18 +149,46 @@ function ns:GetPlate(nameplate)
 	plate.selection:Hide()
 	plate.health.border:SetDrawLayer("BACKGROUND", -6)
 
-	plate.threatGlow = CreateFrame("Frame", nil, plate, "BackdropTemplate")
+	-- Sits below the health frame, so only the parts outside the bar show: a solid ring plus a soft outer halo.
+	plate.threatGlow = CreateFrame("Frame", nil, plate)
 	plate.threatGlow:SetFrameLevel(plate:GetFrameLevel())
-	plate.threatGlow:SetPoint("TOPLEFT", plate.health, -5, 5)
-	plate.threatGlow:SetPoint("BOTTOMRIGHT", plate.health, 5, -5)
-	plate.threatGlow:SetBackdrop({ edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border", edgeSize = 10 })
+	plate.threatGlow:SetAllPoints(plate.health)
+	plate.threatGlow.layers = {}
+	for i, layer in ipairs({ { 4, 1 }, { 7, 0.45 }, { 10, 0.2 } }) do
+		local tex = plate.threatGlow:CreateTexture(nil, "BACKGROUND", nil, -i)
+		tex:SetTexture(SOLID)
+		tex:SetPoint("TOPLEFT", -layer[1], layer[1])
+		tex:SetPoint("BOTTOMRIGHT", layer[1], -layer[1])
+		tex.alpha = layer[2]
+		plate.threatGlow.layers[i] = tex
+	end
 	plate.threatGlow:Hide()
+
+	plate.threatPulse = plate.threatGlow:CreateAnimationGroup()
+	plate.threatPulse:SetLooping("BOUNCE")
+	local fade = plate.threatPulse:CreateAnimation("Alpha")
+	fade:SetFromAlpha(1)
+	fade:SetToAlpha(0.25)
+	fade:SetDuration(0.35)
 
 	plate.healthText = plate.health:CreateFontString(nil, "OVERLAY")
 	plate.healthText:SetPoint("CENTER", 0, 0)
 
-	plate.threatText = plate.health:CreateFontString(nil, "OVERLAY")
-	plate.threatText:SetPoint("LEFT", 2, 0)
+	plate.threatAlert = CreateFrame("Frame", nil, plate)
+	plate.threatAlert:SetSize(1, 1)
+	plate.threatAlert:SetPoint("RIGHT", plate.health, "LEFT", -6, 0)
+	plate.threatAlert:Hide()
+	plate.threatText = plate.threatAlert:CreateFontString(nil, "OVERLAY")
+	plate.threatText:SetPoint("RIGHT")
+	plate.threatBang = plate.threatAlert:CreateFontString(nil, "OVERLAY")
+	plate.threatBang:SetPoint("RIGHT", plate.threatText, "LEFT", -1, 1)
+	plate.threatBang:SetText("!")
+	plate.threatAlertPulse = plate.threatAlert:CreateAnimationGroup()
+	plate.threatAlertPulse:SetLooping("BOUNCE")
+	local alertFade = plate.threatAlertPulse:CreateAnimation("Alpha")
+	alertFade:SetFromAlpha(1)
+	alertFade:SetToAlpha(0.4)
+	alertFade:SetDuration(0.35)
 
 	plate.name = plate:CreateFontString(nil, "OVERLAY")
 	plate.name:SetPoint("BOTTOM", plate.health, "TOP", 0, 3)
@@ -177,7 +205,7 @@ function ns:GetPlate(nameplate)
 	plate.raidIcon = plate:CreateTexture(nil, "OVERLAY")
 	plate.raidIcon:SetTexture("Interface\\TargetingFrame\\UI-RaidTargetingIcons")
 	plate.raidIcon:SetSize(22, 22)
-	plate.raidIcon:SetPoint("RIGHT", plate.health, "LEFT", -22, 0)
+	plate.raidIcon:SetPoint("LEFT", plate.health, "RIGHT", 36, 0)
 
 	plate.cast = createBar(plate)
 	plate.cast:SetPoint("TOPLEFT", plate.health, "BOTTOMLEFT", 0, -4)
@@ -245,7 +273,8 @@ function Plate:ApplyLayout()
 	setFont(self.name, db.fontSize)
 	setFont(self.level, db.fontSize - 1)
 	setFont(self.healthText, db.fontSize - 2)
-	setFont(self.threatText, db.fontSize - 2)
+	self.threatText:SetFont(fontFile(), db.fontSize + 1, "OUTLINE")
+	self.threatBang:SetFont(fontFile(), db.fontSize + 7, "OUTLINE")
 	setFont(self.cast.text, db.fontSize - 1)
 	setFont(self.cast.timer, db.fontSize - 2)
 	self.debuffs:ClearAllPoints()
@@ -268,6 +297,11 @@ end
 function Plate:ClearUnit()
 	self.unit = nil
 	self.castFailedUntil = nil
+	self.threatState = nil
+	self.threatPulse:Stop()
+	self.threatAlertPulse:Stop()
+	self.threatGlow:Hide()
+	self.threatAlert:Hide()
 	self.cast:Hide()
 	self:Hide()
 end
@@ -393,18 +427,37 @@ function Plate:UpdateThreat()
 		return
 	end
 	local color, percent = self:GetThreatState()
+	local state = color and (color == ns.colors.threatWarn and "warn" or "aggro")
+	local glow = self.threatGlow
+
 	if color then
-		self.threatGlow:SetBackdropBorderColor(color[1], color[2], color[3], 1)
-		self.threatGlow:Show()
+		for _, tex in ipairs(glow.layers) do
+			tex:SetVertexColor(color[1], color[2], color[3], tex.alpha)
+		end
+		glow:Show()
 	else
-		self.threatGlow:Hide()
+		glow:Hide()
 	end
-	if percent then
-		self.threatText:SetFormattedText("%.0f%%", percent)
+
+	if state == "warn" then
+		if not self.threatPulse:IsPlaying() then
+			self.threatPulse:Play()
+			self.threatAlertPulse:Play()
+		end
+		self.threatBang:SetTextColor(color[1], color[2], color[3])
 		self.threatText:SetTextColor(color[1], color[2], color[3])
+		self.threatText:SetText(percent and format("%.0f%%", percent) or "")
+		self.threatAlert:Show()
 	else
-		self.threatText:SetText("")
+		self.threatPulse:Stop()
+		self.threatAlertPulse:Stop()
+		self.threatAlert:Hide()
 	end
+
+	if state == "warn" and self.threatState ~= "warn" then
+		ns:PlayThreatWarning()
+	end
+	self.threatState = state
 end
 
 function Plate:GetBaseColor()
@@ -449,7 +502,7 @@ function Plate:UpdateHealthColor(pct)
 
 	local r, g, b = color[1], color[2], color[3]
 	self.health:SetStatusBarColor(r, g, b)
-	self.health.bg:SetVertexColor(r * 0.25, g * 0.25, b * 0.25, 0.85)
+	self.health.bg:SetVertexColor(r * 0.25, g * 0.25, b * 0.25, 1)
 end
 
 function Plate:UpdateTarget()
