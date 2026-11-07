@@ -80,6 +80,8 @@ function UnitReaction() return 2 end
 function UnitClass() return "Hunter", "HUNTER" end
 function UnitIsTapDenied() return false end
 function GetCreatureDifficultyColor() return { r = 1, g = 1, b = 0 } end
+C_PlayerInfo = { GetContentDifficultyCreatureForPlayer = function() return 2 end }
+function GetDifficultyColor() return { r = 0.25, g = 0.75, b = 0.25 } end
 function GetRaidTargetIndex() return nil end
 function UnitCastingInfo() return nil end
 function UnitChannelInfo() return nil end

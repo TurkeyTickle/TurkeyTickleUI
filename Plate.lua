@@ -55,7 +55,16 @@ else
 	end
 end
 
-local GetDifficultyColor = GetCreatureDifficultyColor or GetQuestDifficultyColor
+local function getLevelColor(unit, level)
+	if C_PlayerInfo and C_PlayerInfo.GetContentDifficultyCreatureForPlayer and GetDifficultyColor then
+		local difficulty = known(C_PlayerInfo.GetContentDifficultyCreatureForPlayer(unit))
+		if difficulty then
+			return GetDifficultyColor(difficulty)
+		end
+	end
+	local legacy = GetCreatureDifficultyColor or GetQuestDifficultyColor
+	return legacy(level)
+end
 local UnitIsTapDenied = UnitIsTapDenied or function()
 	return false
 end
@@ -344,7 +353,7 @@ function Plate:UpdateName()
 		self.level:SetTextColor(1, 0.1, 0.1)
 	else
 		self.level:SetText(level .. suffix)
-		local color = GetDifficultyColor(level)
+		local color = getLevelColor(unit, level)
 		self.level:SetTextColor(color.r, color.g, color.b)
 	end
 end
