@@ -164,6 +164,8 @@ function ns:CreateOptions()
 	local left = {
 		createCheckbox(panel, "styleFriendly", "Style friendly nameplates",
 			"Turn off to keep Blizzard's default look on friendly units."),
+		createCheckbox(panel, "stackPlates", "Stack nameplates",
+			"Push nameplates apart vertically so they don't overlap in big pulls. Off lets them overlap at each unit's position."),
 		createCheckbox(panel, "classColors", "Class colors for players"),
 		createCheckbox(panel, "showLevel", "Show level and elite/rare tag"),
 		createCheckbox(panel, "threatColors", "Threat glow",
@@ -189,6 +191,7 @@ function ns:CreateOptions()
 
 	local right = {
 		createSlider(panel, "maxDistance", "Nameplate distance (yards)", 20, 100, 1),
+		createSlider(panel, "stackSpacing", "Stack spacing %", 80, 250, 10),
 		createSlider(panel, "width", "Width", 60, 220, 2),
 		createSlider(panel, "height", "Health height", 4, 30, 1),
 		createSlider(panel, "castHeight", "Cast bar height", 4, 24, 1),
@@ -202,7 +205,7 @@ function ns:CreateOptions()
 	prev = nil
 	for _, widget in ipairs(right) do
 		if prev then
-			widget:SetPoint("TOPLEFT", prev, "BOTTOMLEFT", 0, -6)
+			widget:SetPoint("TOPLEFT", prev, "BOTTOMLEFT", 0, -2)
 		else
 			widget:SetPoint("TOPLEFT", subtitle, "BOTTOMLEFT", 300, -16)
 		end

@@ -14,6 +14,8 @@ ns.defaults = {
 	threatWarnPercent = 80,
 	threatSound = true,
 	maxDistance = 60,
+	stackPlates = true,
+	stackSpacing = 140,
 	executeHighlight = true,
 	executePercent = 20,
 	showDebuffs = true,
@@ -95,19 +97,29 @@ function ns:PlayThreatWarning()
 	PlaySound(SOUNDKIT and SOUNDKIT.RAID_WARNING or 8959, "Master")
 end
 
-function ns:ApplyDistance()
+local function setCVarIfChanged(name, value)
+	if tonumber(GetCVar(name)) ~= value then
+		SetCVar(name, value)
+	end
+end
+
+-- Nameplate CVars are blocked in combat, so changes made then wait for PLAYER_REGEN_ENABLED.
+function ns:ApplyCVars()
 	if InCombatLockdown() then
-		self.distancePending = true
+		self.cvarsPending = true
 		return
 	end
-	self.distancePending = nil
-	if tonumber(GetCVar("nameplateMaxDistance")) ~= self.db.maxDistance then
-		SetCVar("nameplateMaxDistance", self.db.maxDistance)
+	self.cvarsPending = nil
+	local db = self.db
+	setCVarIfChanged("nameplateMaxDistance", db.maxDistance)
+	setCVarIfChanged("nameplateMotion", db.stackPlates and 1 or 0)
+	if db.stackPlates then
+		setCVarIfChanged("nameplateOverlapV", db.stackSpacing / 100)
 	end
 end
 
 function ns:RefreshAll()
-	self:ApplyDistance()
+	self:ApplyCVars()
 	for _, nameplate in ipairs(C_NamePlate.GetNamePlates()) do
 		local unit = nameplate.namePlateUnitToken or (nameplate.UnitFrame and nameplate.UnitFrame.unit)
 		if unit then
@@ -235,13 +247,13 @@ function globalHandlers.PLAYER_REGEN_ENABLED()
 		ns.threatTicker = nil
 	end
 	updateAllThreat()
-	if ns.distancePending then
-		ns:ApplyDistance()
+	if ns.cvarsPending then
+		ns:ApplyCVars()
 	end
 end
 
 function globalHandlers.PLAYER_ENTERING_WORLD()
-	ns:ApplyDistance()
+	ns:ApplyCVars()
 end
 
 function globalHandlers.CVAR_UPDATE(name, value)
@@ -252,7 +264,7 @@ function globalHandlers.CVAR_UPDATE(name, value)
 	value = tonumber(value)
 	if value and value < ns.db.maxDistance then
 		C_Timer.After(0, function()
-			ns:ApplyDistance()
+			ns:ApplyCVars()
 		end)
 	end
 end
