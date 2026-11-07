@@ -104,6 +104,30 @@ function ns:RefreshAll()
 	end
 end
 
+function ns:DebugThreat()
+	local function show(v)
+		if issecretvalue and issecretvalue(v) then
+			return "|cffff8000<secret>|r"
+		end
+		return tostring(v)
+	end
+	local unit = "target"
+	if not UnitExists(unit) then
+		self:Print("Target an enemy first.")
+		return
+	end
+	local plate = C_NamePlate.GetNamePlateForUnit(unit)
+	local token = plate and plate.namePlateUnitToken
+	self:Print(format("plate=%s styled=%s glowOption=%s tankMode=%s", show(token),
+		tostring(token and self.plates[token] ~= nil), tostring(self.db.threatColors), tostring(self.db.tankMode)))
+	self:Print(format("isPlayer=%s inCombat=%s mobTargetIsMe=%s", show(UnitIsPlayer(unit)),
+		show(UnitAffectingCombat(unit)), show(UnitIsUnit("targettarget", "player"))))
+	local isTanking, status, scaled, raw = UnitDetailedThreatSituation("player", unit)
+	self:Print(format("detailed: tanking=%s status=%s scaled=%s raw=%s", show(isTanking), show(status),
+		show(scaled), show(raw)))
+	self:Print("simple status=" .. show(UnitThreatSituation("player", unit)))
+end
+
 local driver = CreateFrame("Frame")
 ns.driver = driver
 
@@ -117,8 +141,8 @@ local unitHandlers = {
 	UNIT_NAME_UPDATE = "UpdateName",
 	UNIT_LEVEL = "UpdateName",
 	UNIT_FACTION = "UpdateAll",
-	UNIT_THREAT_SITUATION_UPDATE = "UpdateThreat",
 	UNIT_THREAT_LIST_UPDATE = "UpdateThreat",
+	UNIT_TARGET = "UpdateThreat",
 	UNIT_AURA = "UpdateDebuffs",
 	UNIT_SPELLCAST_START = "UpdateCast",
 	UNIT_SPELLCAST_DELAYED = "UpdateCast",
@@ -165,14 +189,29 @@ function globalHandlers.RAID_TARGET_UPDATE()
 	end)
 end
 
-function globalHandlers.PLAYER_REGEN_DISABLED()
+local function updateAllThreat()
 	ns:ForEachPlate(function(plate)
-		plate:UpdateThreat()
+		xpcall(plate.UpdateThreat, geterrorhandler(), plate)
 	end)
 end
 
+-- Fires for the player whose threat changed, not the mob, so refresh every plate.
+globalHandlers.UNIT_THREAT_SITUATION_UPDATE = updateAllThreat
+
+-- Threat % changes constantly in combat without always firing an event for each mob.
+function globalHandlers.PLAYER_REGEN_DISABLED()
+	updateAllThreat()
+	if not ns.threatTicker then
+		ns.threatTicker = C_Timer.NewTicker(0.25, updateAllThreat)
+	end
+end
+
 function globalHandlers.PLAYER_REGEN_ENABLED()
-	globalHandlers.PLAYER_REGEN_DISABLED()
+	if ns.threatTicker then
+		ns.threatTicker:Cancel()
+		ns.threatTicker = nil
+	end
+	updateAllThreat()
 	if ns.distancePending then
 		ns:ApplyDistance()
 	end
@@ -223,6 +262,8 @@ SlashCmdList.FOREVERPLATES = function(msg)
 		ns.db.tankMode = not ns.db.tankMode
 		ns:Print("Tank mode " .. (ns.db.tankMode and "|cff00ff00on|r" or "|cffff4040off|r"))
 		ns:RefreshAll()
+	elseif msg == "threat" then
+		ns:DebugThreat()
 	elseif msg == "reset" then
 		wipe(ForeverPlatesDB)
 		copyDefaults(ForeverPlatesDB, ns.defaults)

@@ -352,15 +352,26 @@ end
 -- Returns the glow color and optional threat % text for this unit, or nil for no indicator.
 function Plate:GetThreatState()
 	local unit = self.unit
-	if not ns.db.threatColors or known(UnitIsPlayer(unit)) ~= false or not known(UnitAffectingCombat(unit)) then
-		return
-	end
-	local isTanking, status, scaledPercent = UnitDetailedThreatSituation("player", unit)
-	isTanking, status, scaledPercent = known(isTanking), known(status), known(scaledPercent)
-	if not status then
+	if not ns.db.threatColors or known(UnitIsPlayer(unit)) == true then
 		return
 	end
 	local c = ns.colors
+	local isTanking, status, scaledPercent = UnitDetailedThreatSituation("player", unit)
+	isTanking, status, scaledPercent = known(isTanking), known(status), known(scaledPercent)
+	if not status then
+		-- No usable threat data: fall back to who the mob is attacking.
+		if known(UnitAffectingCombat(unit)) ~= true or known(UnitExists(unit .. "target")) ~= true then
+			return
+		end
+		local onMe = known(UnitIsUnit(unit .. "target", "player"))
+		if onMe == nil then
+			return
+		end
+		if ns.db.tankMode then
+			return not onMe and c.threatAggro or nil
+		end
+		return onMe and c.threatAggro or nil
+	end
 	if ns.db.tankMode then
 		if status == 3 then
 			return
