@@ -1,0 +1,11 @@
+## Interface: 16001
+## Title: ForeverPlates
+## Notes: Clean, readable nameplates with threat colors, cast bars and your debuffs.
+## Author: TurkeyTickle
+## Version: 0.1.0
+## IconTexture: Interface\Icons\Ability_Hunter_SniperShot
+## SavedVariables: ForeverPlatesDB
+
+Core.lua
+Plate.lua
+Config.lua
