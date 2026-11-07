@@ -116,10 +116,20 @@ function ns:DebugThreat()
 		self:Print("Target an enemy first.")
 		return
 	end
-	local plate = C_NamePlate.GetNamePlateForUnit(unit)
-	local token = plate and plate.namePlateUnitToken
-	self:Print(format("plate=%s styled=%s glowOption=%s tankMode=%s", show(token),
-		tostring(token and self.plates[token] ~= nil), tostring(self.db.threatColors), tostring(self.db.tankMode)))
+	local nameplate = C_NamePlate.GetNamePlateForUnit(unit)
+	local styled
+	for token, p in pairs(self.plates) do
+		if UnitIsUnit(token, unit) then
+			styled = p
+		end
+	end
+	self:Print(format("blizzardPlate=%s styled=%s glowOption=%s tankMode=%s warnAt=%d%%", tostring(nameplate ~= nil),
+		tostring(styled ~= nil), tostring(self.db.threatColors), tostring(self.db.tankMode), self.db.threatWarnPercent))
+	if styled then
+		local color, percent = styled:GetThreatState()
+		self:Print(format("glowShown=%s state=%s percent=%s", tostring(styled.threatGlow:IsShown()),
+			color == self.colors.threatAggro and "aggro" or (color and "warn" or "none"), show(percent)))
+	end
 	self:Print(format("isPlayer=%s inCombat=%s mobTargetIsMe=%s", show(UnitIsPlayer(unit)),
 		show(UnitAffectingCombat(unit)), show(UnitIsUnit("targettarget", "player"))))
 	local isTanking, status, scaled, raw = UnitDetailedThreatSituation("player", unit)
