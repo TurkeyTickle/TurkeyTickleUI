@@ -99,10 +99,9 @@ local function abbreviate(n)
 	return tostring(n)
 end
 
--- Bronze edge matching the Forever unit frames, outside-in: dark edge, bronze.
 local BORDER_STYLES = {
-	normal = { { 0.12, 0.08, 0.04 }, { 0.27, 0.19, 0.10 } },
-	target = { { 0.30, 0.22, 0.05 }, { 0.85, 0.66, 0.20 } },
+	normal = { { 0.07, 0.05, 0.03 } },
+	target = { { 0.70, 0.54, 0.16 } },
 }
 local BORDER_SIZE = #BORDER_STYLES.normal
 
