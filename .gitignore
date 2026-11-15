@@ -1,3 +1,8 @@
 .DS_Store
 *.zip
 .release/
+tools/.cache/
+__pycache__/
+tools/bin/
+bin/
+obj/

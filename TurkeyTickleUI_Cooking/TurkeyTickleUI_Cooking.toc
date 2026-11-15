@@ -1,0 +1,24 @@
+## Interface: 16001
+## Title: |cffe8a33dTurkey Tickle UI|r: Cooking
+## Notes: Cooking coach: what in your bags can level Cooking right now, reminders to actually cook it, and the best mobs nearby to hunt for meat.
+## Author: TurkeyTickle
+## Version: 0.1.0
+## Category: Turkey Tickle UI
+## Group: TurkeyTickleUI
+## IconTexture: Interface\Icons\INV_Misc_Food_15
+## SavedVariables: TurkeyTickleUI_CookingDB
+## SavedVariablesPerCharacter: TurkeyTickleUI_CookingCharDB
+## OptionalDeps: TomTom
+## AddonCompartmentFunc: TurkeyTickleUI_Cooking_OnAddonCompartmentClick
+
+Data\Recipes.lua
+Data\Items.lua
+Data\Npcs.lua
+Data\MapFrames.lua
+Core.lua
+Advisor.lua
+Map.lua
+Tooltip.lua
+Reminder.lua
+Browser.lua
+Config.lua
