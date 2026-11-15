@@ -1,0 +1,19 @@
+## Interface: 16001
+## Title: |cffe8a33dTurkey Tickle UI|r: Puzzle
+## Notes: Multiplayer jigsaw puzzles. One player hosts a picture, everyone in the guild or group solves it together in real time.
+## Author: TurkeyTickle
+## Version: 0.1.0
+## Category: Turkey Tickle UI
+## Group: TurkeyTickleUI
+## IconTexture: Interface\Icons\INV_Misc_Note_02
+## SavedVariables: TurkeyTickleUI_PuzzleDB
+## AddonCompartmentFunc: TurkeyTickleUI_Puzzle_OnAddonCompartmentClick
+
+Core.lua
+Codec.lua
+Comm.lua
+Session.lua
+Board.lua
+Host.lua
+Minimap.lua
+Config.lua
