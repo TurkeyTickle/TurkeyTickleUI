@@ -1,0 +1,5 @@
+<Bindings>
+	<Binding name="TURKEYTICKLEUI_XP_TOGGLE" header="TURKEYTICKLEUI" category="ADDONS">
+		TurkeyTickleUI_XP_Toggle()
+	</Binding>
+</Bindings>

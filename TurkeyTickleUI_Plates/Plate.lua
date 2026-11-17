@@ -35,20 +35,24 @@ local SHIELD_ATLAS = hasAtlas("nameplates-InterruptShield") and "nameplates-Inte
 local ELITE_ATLAS = hasAtlas("nameplates-icon-elite-gold") and "nameplates-icon-elite-gold"
 local RARE_ATLAS = hasAtlas("nameplates-icon-elite-silver") and "nameplates-icon-elite-silver"
 
-local GetDebuffData
-if C_UnitAuras and C_UnitAuras.GetDebuffDataByIndex then
-	GetDebuffData = function(unit, index)
-		local aura = C_UnitAuras.GetDebuffDataByIndex(unit, index, "HARMFUL|PLAYER")
-		if aura then
-			return aura.icon, aura.applications, aura.duration, aura.expirationTime
-		end
+-- Index-based aura lookups throw on secret auras, so read the whole list in one call when the client allows it.
+-- Fields may be secret; they're only handed to widgets, never compared.
+local GetPlayerDebuffs
+if C_UnitAuras and C_UnitAuras.GetUnitAuras then
+	GetPlayerDebuffs = function(unit)
+		return C_UnitAuras.GetUnitAuras(unit, "HARMFUL|PLAYER") or {}
 	end
 else
-	GetDebuffData = function(unit, index)
-		local name, icon, count, _, duration, expirationTime = UnitAura(unit, index, "HARMFUL|PLAYER")
-		if name then
-			return icon, count, duration, expirationTime
+	GetPlayerDebuffs = function(unit)
+		local auras = {}
+		for index = 1, 40 do
+			local name, icon, count, _, duration, expirationTime = UnitAura(unit, index, "HARMFUL|PLAYER")
+			if not name then
+				break
+			end
+			auras[index] = { icon = icon, applications = count, duration = duration, expirationTime = expirationTime }
 		end
+		return auras
 	end
 end
 
@@ -602,7 +606,7 @@ function Plate:UpdateDebuffs()
 				break
 			end
 			local texture, count, duration, expirationTime = GetDebuffData(unit, index)
-			if not texture then
+			if not issecretvalue(texture) and not texture then
 				break
 			end
 			shown = shown + 1

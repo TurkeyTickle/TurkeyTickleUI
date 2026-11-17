@@ -33,7 +33,7 @@ The module follows the existing modules' patterns: `ns.handlers` event table, `n
 - `TurkeyTickleUI_XPDB` (account-wide settings):
   - `shown = true`
   - `locked = false`
-  - `scale = 1.0`
+  - `scale = 100` (percent)
   - `windowMinutes = 10` (rolling window, 5 to 30)
   - `point = {}` (saved window position)
 - `TurkeyTickleUI_XPCharDB` (per character): the current session, so it survives `/reload`:
@@ -47,11 +47,14 @@ The module follows the existing modules' patterns: `ns.handlers` event table, `n
 - **Gains:** on `PLAYER_XP_UPDATE` and `PLAYER_LEVEL_UP`, read `UnitXP`, `UnitXPMax` and
   `UnitLevel`:
   - Same level: `gained += xp - lastXP` (ignored if negative).
-  - Level went up: `gained += (lastMax - lastXP) + xp`. If several levels were skipped, the
-    middle levels are not counted. That's acceptable because it doesn't happen through normal play.
-  - Store the new `lastXP`, `lastMax` and `lastLevel`.
+  - Level went up, or XP went down (the bar wrapped before `UnitLevel` caught up):
+    `gained += (lastMax - lastXP) + xp`, and `lastLevel` becomes at least `lastLevel + 1`, so the
+    late level change isn't counted again. If several levels were skipped, the middle levels are not
+    counted. That's acceptable because it doesn't happen through normal play.
+  - Reads happen on the next frame after the event, and the new `lastXP` and `lastMax` are stored.
 - **Samples:** every 30 seconds (an `OnUpdate` throttle on the driver), append `{ t, gained }`.
-  Keep samples covering the last 70 minutes, enough for the 60-minute sparkline plus one window.
+  Keep samples covering the last 90 minutes, enough for the 60-minute sparkline plus the longest
+  (30-minute) window.
 - **Recent rate:** `(gained_now - gained_at(now - window)) / window * 3600`. If the session is
   younger than the window, use the session's age as the window. This is undefined (shown as `--`)
   for the first 60 seconds.
@@ -67,12 +70,13 @@ The module follows the existing modules' patterns: `ns.handlers` event table, `n
 
 - About 160×56 pixels, `BackdropTemplate`, a dark translucent background with a thin border, and
   `MEDIUM` strata, clamped to the screen.
-- Line 1: the recent rate as `14.2k/hr` (`1.2m/hr` above a million), then the trend arrow: green
-  ▲, red ▼ or grey –. Arrows use texture escapes or plain characters that the game font renders.
+- Line 1: the recent rate as `14.2k/hr` (`1.2m/hr` above a million), then the trend arrow: a green
+  up arrow or a red down arrow (the `Interface\Buttons\Arrow-Up-Up` / `Arrow-Down-Up` textures,
+  desaturated and tinted). There's no arrow when the trend is flat or not yet known.
 - Line 2 (small, grey): `avg 11.8k · 1h 12m to 37`.
 - Sparkline: across the bottom, the recent rate at each sample over the last 60 minutes, drawn as
   line segments with `CreateLine`, scaled to the highest value shown. It's hidden until there are
-  two points.
+  two points. Samples are kept for 90 minutes so the oldest point can look back a full window.
 - The text refreshes once per sample tick and on every XP event.
 - **Drag** with the left button to move, unless the window is locked. The position is saved to
   `point`.
