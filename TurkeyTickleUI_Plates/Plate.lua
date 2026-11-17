@@ -164,7 +164,20 @@ end
 local HAS_AURA_CONTAINERS = C_XMLUtil and C_XMLUtil.GetTemplateInfo
 	and C_XMLUtil.GetTemplateInfo("CustomAuraContainerTemplate") and true or false
 local DEBUFF_GROUP = "mine"
-local DEBUFF_SPACING = 6
+
+local DEBUFF_SPACING = 3
+
+local debuffTimeFormatter
+if C_StringUtil and C_StringUtil.CreateNumericRuleFormatter then
+	debuffTimeFormatter = C_StringUtil.CreateNumericRuleFormatter()
+	debuffTimeFormatter:AddBreakpoint({ threshold = 0, step = 1, format = "%d" })
+	debuffTimeFormatter:AddBreakpoint({ threshold = 60, format = "%dm", components = { { div = 60, step = 1 } } })
+end
+
+local function debuffLineSize()
+	local db = ns.db
+	return math.max(db.maxDebuffs, 1) * (db.debuffSize + DEBUFF_SPACING) + 1
+end
 
 local function debuffLayout()
 	local db = ns.db
@@ -173,7 +186,8 @@ local function debuffLayout()
 		elementHeight = db.debuffSize * 0.75,
 		elementSpacing = DEBUFF_SPACING,
 		lineSpacing = DEBUFF_SPACING,
-		maximumLineSize = math.huge,
+		groupLineSpacing = DEBUFF_SPACING,
+		maximumLineSize = debuffLineSize(),
 	}
 end
 
@@ -193,12 +207,21 @@ local function initDebuffButton(button)
 	button.cooldown:SetAllPoints()
 	button.cooldown:SetReverse(true)
 	button.cooldown:SetDrawEdge(false)
+	button.cooldown:SetDrawBling(false)
+	button.cooldown:SetHideCountdownNumbers(true)
 	button:SetDurationCooldown(button.cooldown)
 
 	button.count = button.cooldown:CreateFontString(nil, "OVERLAY")
 	button.count:SetPoint("BOTTOMRIGHT", 2, -1)
-	setFont(button.count, db.fontSize - 1)
+	button.count:SetFont(fontFile(), db.fontSize - 2, "OUTLINE")
 	button:SetApplicationCount(button.count)
+
+	if debuffTimeFormatter and button.SetDurationText then
+		button.timer = button.cooldown:CreateFontString(nil, "OVERLAY")
+		button.timer:SetPoint("CENTER", 0, 0)
+		button.timer:SetFont(fontFile(), db.fontSize - 1, "OUTLINE")
+		button:SetDurationText(button.timer, { textFormatter = debuffTimeFormatter })
+	end
 end
 
 local function debuffStyleKey()
@@ -216,9 +239,10 @@ local function createAuraContainer(parent)
 		initializeFrame = initDebuffButton,
 		layout = debuffLayout(),
 	})
+	container:SetAuraGroupLayout(DEBUFF_GROUP, debuffLayout())
 	container:SetFlowLayoutAnchorPoint("BOTTOMLEFT")
 	container:SetFlowLayoutGrowthDirection(AnchorUtil.FlowDirection.Right, AnchorUtil.FlowDirection.Up)
-	container:SetFlowLayoutMaximumLineSize(math.huge)
+	container:SetFlowLayoutMaximumLineSize(debuffLineSize())
 	container:SetEnabled(false)
 	return container
 end
@@ -411,6 +435,8 @@ function Plate:ApplyLayout()
 		container:ClearAllPoints()
 		container:SetPoint("BOTTOMLEFT", self.health, "TOPLEFT", 0, db.fontSize + BORDER_SIZE + 9)
 		container:SetAuraGroupMaxFrameCount(DEBUFF_GROUP, math.max(db.maxDebuffs, 1))
+		container:SetAuraGroupLayout(DEBUFF_GROUP, debuffLayout())
+		container:SetFlowLayoutMaximumLineSize(debuffLineSize())
 	end
 end
 
