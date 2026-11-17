@@ -35,8 +35,7 @@ local SHIELD_ATLAS = hasAtlas("nameplates-InterruptShield") and "nameplates-Inte
 local ELITE_ATLAS = hasAtlas("nameplates-icon-elite-gold") and "nameplates-icon-elite-gold"
 local RARE_ATLAS = hasAtlas("nameplates-icon-elite-silver") and "nameplates-icon-elite-silver"
 
--- Index-based aura lookups throw on secret auras, so read the whole list in one call when the client allows it.
--- Fields may be secret; they're only handed to widgets, never compared.
+-- Only used on clients without aura containers. Fields may be secret; they're only handed to widgets, never compared.
 local GetPlayerDebuffs
 if C_UnitAuras and C_UnitAuras.GetUnitAuras then
 	GetPlayerDebuffs = function(unit)
@@ -158,6 +157,70 @@ local function addBorder(frame, anchor)
 	border.lip = addLip(frame, anchor)
 	border:SetStyle("normal")
 	return border
+end
+
+-- Clients with secret auras refuse every aura query from addon code in combat. Blizzard's aura containers read
+-- the auras themselves and fill in frames we style, so they're the only way to show them there.
+local HAS_AURA_CONTAINERS = C_XMLUtil and C_XMLUtil.GetTemplateInfo
+	and C_XMLUtil.GetTemplateInfo("CustomAuraContainerTemplate") and true or false
+local DEBUFF_GROUP = "mine"
+local DEBUFF_SPACING = 6
+
+local function debuffLayout()
+	local db = ns.db
+	return {
+		elementWidth = db.debuffSize,
+		elementHeight = db.debuffSize * 0.75,
+		elementSpacing = DEBUFF_SPACING,
+		lineSpacing = DEBUFF_SPACING,
+		maximumLineSize = math.huge,
+	}
+end
+
+-- Aura buttons turn forbidden once they've shown an aura, so they can only be styled here, when first created.
+local function initDebuffButton(button)
+	local db = ns.db
+	button:SetSize(db.debuffSize, db.debuffSize * 0.75)
+	button:SetMouseMotionEnabled(false)
+	addBorder(button)
+
+	button.icon = button:CreateTexture(nil, "ARTWORK")
+	button.icon:SetAllPoints()
+	button.icon:SetTexCoord(0.08, 0.92, 0.2, 0.8)
+	button:SetIcon(button.icon)
+
+	button.cooldown = CreateFrame("Cooldown", nil, button, "CooldownFrameTemplate")
+	button.cooldown:SetAllPoints()
+	button.cooldown:SetReverse(true)
+	button.cooldown:SetDrawEdge(false)
+	button:SetDurationCooldown(button.cooldown)
+
+	button.count = button.cooldown:CreateFontString(nil, "OVERLAY")
+	button.count:SetPoint("BOTTOMRIGHT", 2, -1)
+	setFont(button.count, db.fontSize - 1)
+	button:SetApplicationCount(button.count)
+end
+
+local function debuffStyleKey()
+	return ns.db.debuffSize .. ":" .. ns.db.fontSize
+end
+
+local function createAuraContainer(parent)
+	local container = CreateFrame("AuraContainer", nil, parent, "CustomAuraContainerTemplate")
+	container:SetSize(1, 1)
+	container.styleKey = debuffStyleKey()
+	container:AddAuraGroup(DEBUFF_GROUP, "HARMFUL|PLAYER", {
+		maxFrameCount = math.max(ns.db.maxDebuffs, 1),
+		sortMethod = AuraContainerSortMethod.Default,
+		sortDirection = AuraContainerSortDirection.Normal,
+		initializeFrame = initDebuffButton,
+		layout = debuffLayout(),
+	})
+	container:SetFlowLayoutAnchorPoint("BOTTOMLEFT")
+	container:SetFlowLayoutGrowthDirection(AnchorUtil.FlowDirection.Right, AnchorUtil.FlowDirection.Up)
+	container:SetFlowLayoutMaximumLineSize(math.huge)
+	container:SetEnabled(false)
+	return container
 end
 
 local function createBar(parent)
@@ -293,6 +356,9 @@ function ns:GetPlate(nameplate)
 	plate.debuffs = CreateFrame("Frame", nil, plate)
 	plate.debuffs:SetSize(1, 1)
 	plate.debuffs.icons = {}
+	if HAS_AURA_CONTAINERS then
+		plate.auraContainer = createAuraContainer(plate)
+	end
 
 	nameplate.TurkeyTicklePlate = plate
 	hideBlizzardFrame(nameplate)
@@ -333,6 +399,19 @@ function Plate:ApplyLayout()
 		icon:SetSize(db.debuffSize, db.debuffSize * 0.75)
 		setFont(icon.count, db.fontSize - 1)
 	end
+
+	local container = self.auraContainer
+	if container then
+		if container.styleKey ~= debuffStyleKey() then
+			self:DisableAuraContainer()
+			container:SetParent(nil)
+			container = createAuraContainer(self)
+			self.auraContainer = container
+		end
+		container:ClearAllPoints()
+		container:SetPoint("BOTTOMLEFT", self.health, "TOPLEFT", 0, db.fontSize + BORDER_SIZE + 9)
+		container:SetAuraGroupMaxFrameCount(DEBUFF_GROUP, math.max(db.maxDebuffs, 1))
+	end
 end
 
 function Plate:SetUnit(unit)
@@ -353,6 +432,7 @@ function Plate:ClearUnit()
 	self.threatGlow:Hide()
 	self.threatAlert:Hide()
 	self.cast:Hide()
+	self:DisableAuraContainer()
 	self:Hide()
 end
 
@@ -595,30 +675,75 @@ function Plate:GetDebuffIcon(i)
 	return icon
 end
 
+function Plate:SetDebuffCount(icon, count)
+	if C_StringUtil and C_StringUtil.TruncateWhenZero then
+		icon.count:SetText(C_StringUtil.TruncateWhenZero(count))
+		return
+	end
+	count = known(count)
+	icon.count:SetText(count and count > 1 and count or "")
+end
+
+function Plate:SetDebuffCooldown(icon, aura)
+	local cooldown = icon.cooldown
+	if aura.auraInstanceID and C_UnitAuras.GetAuraDuration and cooldown.SetCooldownFromDurationObject then
+		local durationObject = C_UnitAuras.GetAuraDuration(self.unit, aura.auraInstanceID)
+		if durationObject then
+			cooldown:SetCooldownFromDurationObject(durationObject)
+			if cooldown.SetAlphaFromBoolean then
+				cooldown:SetAlphaFromBoolean(durationObject:IsZero(), 0, 1)
+			end
+		else
+			cooldown:Clear()
+		end
+		return
+	end
+	local duration, expirationTime = known(aura.duration), known(aura.expirationTime)
+	if duration and expirationTime and duration > 0 then
+		cooldown:SetCooldown(expirationTime - duration, duration)
+	else
+		cooldown:Clear()
+	end
+end
+
+function Plate:DisableAuraContainer()
+	local container = self.auraContainer
+	if container then
+		container:SetEnabled(false)
+		container:Hide()
+		container.boundUnit = nil
+	end
+end
+
 function Plate:UpdateDebuffs()
 	local unit = self.unit
 	local db = ns.db
 	local shown = 0
 
+	local container = self.auraContainer
+	if container then
+		if not (db.showDebuffs and db.maxDebuffs > 0 and known(UnitCanAttack("player", unit))) then
+			self:DisableAuraContainer()
+		elseif container.boundUnit ~= unit then
+			-- The container tracks the unit's aura events itself once bound.
+			container:SetEnabled(true)
+			container:SetUnit(unit)
+			container:Show()
+			container.boundUnit = unit
+		end
+		return
+	end
+
 	if db.showDebuffs and known(UnitCanAttack("player", unit)) then
-		for index = 1, 40 do
+		for _, aura in ipairs(GetPlayerDebuffs(unit)) do
 			if shown >= db.maxDebuffs then
-				break
-			end
-			local texture, count, duration, expirationTime = GetDebuffData(unit, index)
-			if not issecretvalue(texture) and not texture then
 				break
 			end
 			shown = shown + 1
 			local icon = self:GetDebuffIcon(shown)
-			icon.texture:SetTexture(texture)
-			count, duration, expirationTime = known(count), known(duration), known(expirationTime)
-			icon.count:SetText(count and count > 1 and count or "")
-			if duration and expirationTime and duration > 0 then
-				icon.cooldown:SetCooldown(expirationTime - duration, duration)
-			else
-				icon.cooldown:Clear()
-			end
+			icon.texture:SetTexture(aura.icon)
+			self:SetDebuffCount(icon, aura.applications)
+			self:SetDebuffCooldown(icon, aura)
 			icon:Show()
 		end
 	end

@@ -36,8 +36,19 @@ function CreateFrame(kind, name, parent, template)
 	f.SetScript = function(self, k, fn) scripts[k] = fn end
 	f.GetScript = function(self, k) return scripts[k] or function() end end
 	f.scripts = scripts
+	if kind == "AuraContainer" then
+		f.AddAuraGroup = function(self, _, filter, options)
+			print("aura group:", filter, "max", options.maxFrameCount)
+			options.initializeFrame(stub())
+		end
+		f.SetUnit = function(self, unit) print("aura container unit:", unit) end
+	end
 	return f
 end
+C_XMLUtil = { GetTemplateInfo = function(name) return name == "CustomAuraContainerTemplate" and {} or nil end }
+AuraContainerSortMethod = { Default = 0 }
+AuraContainerSortDirection = { Normal = 0 }
+AnchorUtil = { FlowDirection = { Left = 0, Right = 1, Up = 2, Down = 3 } }
 function Mixin(o, ...) for _, m in ipairs({...}) do for k, v in pairs(m) do o[k] = v end end return o end
 function geterrorhandler() return function(e) print("LUA ERROR: " .. tostring(e)) print(debug.traceback()) end end
 function issecretvalue() return false end
@@ -66,7 +77,15 @@ rawset(nameplate, "TurkeyTicklePlate", false)
 rawset(nameplate, "namePlateUnitToken", "nameplate1")
 rawset(nameplate.UnitFrame, "turkeyTicklePlatesHooked", false)
 C_NamePlate = { GetNamePlateForUnit = function() return nameplate end, GetNamePlates = function() return { nameplate } end }
-C_UnitAuras = { GetDebuffDataByIndex = function() return nil end }
+C_UnitAuras = {
+	GetUnitAuras = function()
+		return { { auraInstanceID = 7, icon = 136207, applications = 2, duration = 18, expirationTime = 110 } }
+	end,
+	GetAuraDuration = function()
+		return { IsZero = function() return false end }
+	end,
+}
+C_StringUtil = { TruncateWhenZero = function(n) return n == 0 and "" or tostring(n) end }
 function UnitIsUnit(a, b) return false end
 function UnitCanAttack() return true end
 function UnitName() return "Mob" end
@@ -113,6 +132,13 @@ fire("UNIT_THREAT_LIST_UPDATE", "nameplate1")
 THREAT = { true, 3, 100, 100 }
 fire("UNIT_THREAT_LIST_UPDATE", "nameplate1")
 fire("UNIT_HEALTH", "nameplate1")
+fire("UNIT_AURA", "nameplate1")
+local container = ns.plates.nameplate1.auraContainer
+ns.db.debuffSize = 24
+ns.plates.nameplate1:ApplyLayout()
+print("container replaced on resize:", ns.plates.nameplate1.auraContainer ~= container)
+ns.plates.nameplate1:ApplyLayout()
+print("container kept when unchanged:", ns.plates.nameplate1.auraContainer.styleKey == "24:" .. ns.db.fontSize)
 fire("NAME_PLATE_UNIT_REMOVED", "nameplate1")
 SlashCmdList.TURKEYTICKLEUI_PLATES("threat")
 SlashCmdList.TURKEYTICKLEUI_PLATES("")
