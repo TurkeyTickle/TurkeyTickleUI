@@ -56,16 +56,15 @@ Options live under **Options > AddOns > Turkey Tickle UI > Puzzle**.
 
 ## Building the image tool
 
-`tools/PuzzleImage` is a .NET 10 Native AOT app. Publishing makes a native `ttpz`
-executable plus SkiaSharp's native library (`libSkiaSharp.so` / `libSkiaSharp.dll` /
-`libSkiaSharp.dylib`), which has to stay next to it:
+`tools/ttpz` is a Rust program that builds to a single self-contained executable:
 
 ```
-dotnet publish tools/PuzzleImage -c Release -r linux-x64 -o tools/bin
+cargo build --release --manifest-path tools/ttpz/Cargo.toml
 ```
 
-Use `-r win-x64` on Windows or `-r osx-arm64` on a Mac. Native AOT can't cross-compile between
-operating systems, so build each one on that OS.
+On Windows or a Mac, the same command builds a native `ttpz.exe` / `ttpz`. To build the Windows
+`.exe` from Linux, run `tools/ttpz/build-windows.sh` (its header lists what it needs); it writes
+`tools/bin/ttpz.exe`.
 
 ## Limits
 

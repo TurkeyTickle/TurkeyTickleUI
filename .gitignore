@@ -4,5 +4,4 @@
 tools/.cache/
 __pycache__/
 tools/bin/
-bin/
-obj/
+tools/ttpz/target/

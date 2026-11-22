@@ -41,11 +41,11 @@ python3 tools/build_pets_data.py
 python3 tools/build_cooking_data.py
 ```
 
-The Puzzle module's image tool is a .NET 10 Native AOT app in `tools/PuzzleImage`:
+The Puzzle module's image tool is a Rust program in `tools/ttpz`:
 
 ```
-dotnet publish tools/PuzzleImage -c Release -r linux-x64 -o tools/bin
-tools/bin/ttpz https://example.com/picture.jpg --out /tmp/code.txt
+cargo build --release --manifest-path tools/ttpz/Cargo.toml
+tools/ttpz/target/release/ttpz https://example.com/picture.jpg --out /tmp/code.txt
 luajit tests/harness_puzzle.lua TurkeyTickleUI_Puzzle /tmp/code.txt
 ```
 

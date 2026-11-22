@@ -1,6 +1,6 @@
 local ADDON, ns = ...
 
--- Image code format (tools/PuzzleImage writes the same thing):
+-- Image code format (tools/ttpz writes the same thing):
 --   "TTPZ1:" width(2) height(2) colors-1(1) palette(colors x 4) pixels
 -- Numbers are base64 digits, most significant first. Each palette entry is a 24-bit RGB value.
 -- Pixels are palette indices, one digit each, or "~" run color for run+3 repeats. They're

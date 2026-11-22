@@ -1,0 +1,22 @@
+[package]
+name = "ttpz"
+version = "0.1.0"
+edition = "2024"
+description = "Turns an image into a code for TurkeyTickleUI_Puzzle"
+publish = false
+
+[dependencies]
+image = { version = "0.25", default-features = false, features = ["bmp", "gif", "jpeg", "png", "webp"] }
+
+# Windows has its own TLS (SChannel), so Windows builds need no C toolchain.
+[target.'cfg(windows)'.dependencies]
+ureq = { version = "3", default-features = false, features = ["native-tls"] }
+
+[target.'cfg(not(windows))'.dependencies]
+ureq = { version = "3", default-features = false, features = ["rustls"] }
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true
+opt-level = 3
