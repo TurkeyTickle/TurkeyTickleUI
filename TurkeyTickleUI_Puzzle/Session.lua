@@ -583,6 +583,7 @@ function ns:JoinSession(session)
 		self:Print("There's no puzzle to join. Type /ttpz host to start one.")
 		return
 	end
+	StaticPopup_Hide("TURKEYTICKLEUI_PUZZLE_READY")
 	self.active = session
 	session.players[self:ShortName(self:PlayerName())] = true
 	if not session.joined then

@@ -130,6 +130,13 @@ local function newClient(name, surname)
 	env.SlashCmdList = {}
 	env.StaticPopupDialogs = {}
 	env.StaticPopup_Show = function(which, a, b, data) table.insert(client.popups, { which = which, data = data }) end
+	env.StaticPopup_Hide = function(which)
+		for _, popup in ipairs(client.popups) do
+			if popup.which == which then
+				popup.hidden = true
+			end
+		end
+	end
 	env.GameTooltip = makeWidget()
 	env.GameTooltip_Hide = function() end
 	env.SOUNDKIT = { IG_ABILITY_ICON_DROP = 1, LEVELUP = 2 }
@@ -360,6 +367,7 @@ check(reached.label ~= nil and bobButton.glow._shown, "Bob's minimap button glow
 check(#bob.popups == 1 and bobButton.label._text:match("Ready"), "Bob gets a ready popup and a Ready button once it's loaded")
 bob.ns:JoinSession(bob.popups[1].data)
 check(bobButton.label._text == "" and not bobButton.glow._shown, "the button calms down once Bob opens the puzzle")
+check(bob.popups[1].hidden, "opening the puzzle closes the ready popup")
 check(bobSession.decoder:IsComplete(), string.format("Bob receives the whole picture (preview %.1fs, medium %.1fs, full %.1fs)",
 	reached[1] or -1, reached[2] or -1, reached[3] or -1))
 local identical = true
