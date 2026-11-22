@@ -202,6 +202,11 @@ local function expandAll(tab)
 			clicks = clicks + 1
 		end
 	until not closed or clicks > 2000
+	local seen = {}
+	for _, node in ipairs(ns.browser.scroll.lastRows) do
+		assert(not seen[node.id], "duplicate node id " .. node.id)
+		seen[node.id] = true
+	end
 	return #ns.browser.scroll.lastRows
 end
 for _, tab in ipairs({ "skills", "families", "special", "trainers" }) do

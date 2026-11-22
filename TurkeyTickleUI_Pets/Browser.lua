@@ -216,7 +216,7 @@ local function readyNodes()
 			if best.source == "trainer" then
 				tinsert(trainerRanks, format("%s %d", ability.name, best.rank))
 			else
-				tinsert(kids, rankNode("ready", ability, best, format("%s%s %d|r", GREEN, ability.name, best.rank)))
+				tinsert(kids, rankNode("ready:" .. ability.key, ability, best, format("%s%s %d|r", GREEN, ability.name, best.rank)))
 			end
 		end
 	end
