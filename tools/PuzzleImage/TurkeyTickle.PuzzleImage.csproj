@@ -5,7 +5,7 @@
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
-    <AssemblyName>puzzle-image</AssemblyName>
+    <AssemblyName>ttpz</AssemblyName>
     <RootNamespace>TurkeyTickle.PuzzleImage</RootNamespace>
     <PublishAot>true</PublishAot>
     <RuntimeFrameworkVersion>10.0.15</RuntimeFrameworkVersion>

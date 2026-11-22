@@ -14,38 +14,53 @@ internal static class Clipboard
         ["clip.exe"],
     ];
 
-    /// <returns>The program that took the text, or null if none worked.</returns>
-    public static string? TryCopy(string text)
+    public static bool TryCopy(string text)
     {
         foreach (var command in Commands)
         {
-            var start = new ProcessStartInfo(command[0]) { RedirectStandardInput = true, UseShellExecute = false };
-            foreach (var argument in command.Skip(1))
+            if (TryRun(command, text))
             {
-                start.ArgumentList.Add(argument);
-            }
-
-            try
-            {
-                using var process = Process.Start(start);
-                if (process is null)
-                {
-                    continue;
-                }
-
-                process.StandardInput.Write(text);
-                process.StandardInput.Close();
-                if (process.WaitForExit(5000) && process.ExitCode == 0)
-                {
-                    return command[0];
-                }
-            }
-            catch (Win32Exception)
-            {
-                // Not installed; try the next one.
+                return true;
             }
         }
 
-        return null;
+        return OperatingSystem.IsLinux() && TryRun([
+            "qdbus6", "org.kde.klipper", "/klipper",
+            "org.kde.klipper.klipper.setClipboardContents", text,
+        ]);
+    }
+
+    private static bool TryRun(string[] command, string? input = null)
+    {
+        var start = new ProcessStartInfo(command[0])
+        {
+            RedirectStandardInput = input is not null,
+            UseShellExecute = false,
+        };
+        foreach (var argument in command.Skip(1))
+        {
+            start.ArgumentList.Add(argument);
+        }
+
+        try
+        {
+            using var process = Process.Start(start);
+            if (process is null)
+            {
+                return false;
+            }
+
+            if (input is not null)
+            {
+                process.StandardInput.Write(input);
+                process.StandardInput.Close();
+            }
+
+            return process.WaitForExit(5000) && process.ExitCode == 0;
+        }
+        catch (Exception e) when (e is Win32Exception or IOException)
+        {
+            return false;
+        }
     }
 }

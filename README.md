@@ -45,7 +45,7 @@ The Puzzle module's image tool is a .NET 10 Native AOT app in `tools/PuzzleImage
 
 ```
 dotnet publish tools/PuzzleImage -c Release -r linux-x64 -o tools/bin
-tools/bin/puzzle-image https://example.com/picture.jpg --out /tmp/code.txt
+tools/bin/ttpz https://example.com/picture.jpg --out /tmp/code.txt
 luajit tests/harness_puzzle.lua TurkeyTickleUI_Puzzle /tmp/code.txt
 ```
 

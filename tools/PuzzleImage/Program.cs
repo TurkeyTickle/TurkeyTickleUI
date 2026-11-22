@@ -2,9 +2,9 @@
 
 const string Usage = """
     Turns an image (web URL or file) into a code for TurkeyTickleUI_Puzzle.
-    Paste the code into the addon's host window (/ttpz host).
+    Copies the code to your clipboard for the addon's host window (/ttpz host).
 
-    usage: puzzle-image <url-or-file> [options]
+    usage: ttpz <url-or-file> [options]
 
       --size N         longest side in pixels (8-320, default 192)
       --colors N       palette size (2-64, default 64)
@@ -101,20 +101,23 @@ if (outPath is not null)
     await File.WriteAllTextAsync(outPath, code);
     Console.Error.WriteLine($"Code written to {outPath}");
 }
-else if (!Console.IsOutputRedirected && Clipboard.TryCopy(code) is not null)
-{
-    Console.Error.WriteLine("Code copied to the clipboard. In game: /ttpz host, then paste it.");
-}
 else
 {
-    Console.WriteLine(code);
+    var copied = Clipboard.TryCopy(code);
+    Console.Error.WriteLine(copied
+        ? "Code copied to the clipboard. In game: /ttpz host, then paste it."
+        : "Clipboard unavailable. The code was printed below.");
+    if (!copied || Console.IsOutputRedirected)
+    {
+        Console.WriteLine(code);
+    }
 }
 
 return 0;
 
 static int Fail(string message)
 {
-    Console.Error.WriteLine($"puzzle-image: {message}");
-    Console.Error.WriteLine("Run puzzle-image --help for usage.");
+    Console.Error.WriteLine($"ttpz: {message}");
+    Console.Error.WriteLine("Run ttpz --help for usage.");
     return 2;
 }
