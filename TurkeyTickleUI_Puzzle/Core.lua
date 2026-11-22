@@ -3,7 +3,7 @@ local ADDON, ns = ...
 ns.defaults = {
 	scale = 100,
 	prompt = true,
-	ghost = true,
+	hostGhost = false, -- the picture under the pieces, for puzzles we host
 	sounds = true,
 	pieces = 24,
 	channel = "GUILD", -- "GUILD" or "GROUP"
@@ -78,6 +78,7 @@ function ns.handlers.ADDON_LOADED(name)
 	copyDefaults(TurkeyTickleUI_PuzzleDB, ns.defaults)
 	ns.db = TurkeyTickleUI_PuzzleDB
 	ns.db.debugLog = nil
+	ns.db.ghost = nil
 	ns:InitComm()
 	ns:CreateOptions()
 	ns:UpdateMinimap()

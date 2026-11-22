@@ -1,9 +1,11 @@
 local ADDON, ns = ...
 
 -- Messages (fields split on ":", the last field may contain anything but "|"):
---   S:id:channel:cols:rows:chunks:seed:title   a puzzle exists (channel G = guild, P = group)
+--   S:id:channel:cols:rows:chunks:seed:ghost:title   a puzzle exists (channel G = guild, P = group)
+--   G:id:ghost                                 the host turned the picture under the pieces on (1) or off (0)
 --   D:id:index:text                            a chunk of the image code
---   M:id:piece:seq:x:y:state                   a piece moved (d = held, r = let go, p = placed)
+--   M:id:piece:seq:x:y:state                   a piece and its group moved (d = held, r = let go, p = placed)
+--   L:id:a:b                                   pieces a and b were snapped together, joining their groups
 --   J:id                                       someone opened the puzzle
 --   Q:id:have:snapshot                         whisper to the host: send me chunks after `have`
 --   P:id:first:pieces                          piece positions for someone catching up
@@ -19,7 +21,7 @@ local HOLD_TIMEOUT = 15
 local STALL_SECONDS = 6
 local ASK_COOLDOWN = 8
 local ANSWER_COOLDOWN = 4
-local SNAPSHOT_PIECES = 30
+local SNAPSHOT_PIECES = 24
 
 ns.sessions = {}
 ns.active = nil
@@ -90,35 +92,23 @@ local function buildShapes(session)
 	for r = 0, rows do
 		rowY[r] = math.floor(r * h / rows)
 	end
-	local colOf, rowOf = {}, {}
-	for c = 0, cols - 1 do
-		for x = colX[c], colX[c + 1] - 1 do
-			colOf[x] = c
-		end
-	end
+	-- A piece is its cell, minus the circles of its neighbors' knobs, plus the parts of its own
+	-- knobs' circles past its edge. Each knob's box is that part, rounded out to whole pixels.
+	local shapes = {}
 	for r = 0, rows - 1 do
-		for y = rowY[r], rowY[r + 1] - 1 do
-			rowOf[y] = r
-		end
-	end
-	local owner = {}
-	for y = 0, h - 1 do
-		local base = rowOf[y] * cols + 1
-		for x = 0, w - 1 do
-			owner[y * w + x] = base + colOf[x]
+		for c = 0, cols - 1 do
+			shapes[r * cols + c + 1] = { x0 = colX[c], y0 = rowY[r], x1 = colX[c + 1], y1 = rowY[r + 1], knobs = {}, holes = {} }
 		end
 	end
 
 	session.rng = session.seed % 2147483646 + 1
-	local function knob(fromCell, intoCell, cx, cy, radius)
-		for y = math.max(0, math.floor(cy - radius)), math.min(h - 1, math.ceil(cy + radius)) do
-			for x = math.max(0, math.floor(cx - radius)), math.min(w - 1, math.ceil(cx + radius)) do
-				local dx, dy = x + 0.5 - cx, y + 0.5 - cy
-				if dx * dx + dy * dy <= radius * radius and owner[y * w + x] == intoCell then
-					owner[y * w + x] = fromCell
-				end
-			end
-		end
+	local function knob(fromCell, intoCell, cx, cy, radius, dx, dy, edge)
+		local k = { cx = cx, cy = cy, r = radius, dx = dx, dy = dy, edge = edge,
+			x0 = math.floor(cx - radius), y0 = math.floor(cy - radius), x1 = math.ceil(cx + radius), y1 = math.ceil(cy + radius) }
+		if dx > 0 then k.x0 = edge elseif dx < 0 then k.x1 = edge end
+		if dy > 0 then k.y0 = edge elseif dy < 0 then k.y1 = edge end
+		tinsert(shapes[fromCell].knobs, k)
+		tinsert(shapes[intoCell].holes, { cx = cx, cy = cy, r = radius })
 	end
 	for r = 0, rows - 1 do
 		for c = 0, cols - 1 do
@@ -132,7 +122,7 @@ local function buildShapes(session)
 				if out < 0 then
 					from, into = into, from
 				end
-				knob(from, into, colX[c + 1] + out * KNOB_REACH * radius, cy, radius)
+				knob(from, into, colX[c + 1] + out * KNOB_REACH * radius, cy, radius, out, 0, colX[c + 1])
 			end
 			if r < rows - 1 then
 				local radius = (KNOB_MIN + KNOB_SPREAD * random(session)) * math.min(cellW, cellH, rowY[r + 2] - rowY[r + 1])
@@ -142,25 +132,21 @@ local function buildShapes(session)
 				if out < 0 then
 					from, into = into, from
 				end
-				knob(from, into, cx, rowY[r + 1] + out * KNOB_REACH * radius, radius)
+				knob(from, into, cx, rowY[r + 1] + out * KNOB_REACH * radius, radius, 0, out, rowY[r + 1])
 			end
 		end
 	end
 
 	local bounds = {}
-	for i = 1, cols * rows do
-		bounds[i] = { w, h, 0, 0 }
-	end
-	for y = 0, h - 1 do
-		for x = 0, w - 1 do
-			local b = bounds[owner[y * w + x]]
-			if x < b[1] then b[1] = x end
-			if y < b[2] then b[2] = y end
-			if x + 1 > b[3] then b[3] = x + 1 end
-			if y + 1 > b[4] then b[4] = y + 1 end
+	for i, s in ipairs(shapes) do
+		local b = { s.x0, s.y0, s.x1, s.y1 }
+		for _, k in ipairs(s.knobs) do
+			b[1], b[2] = math.min(b[1], k.x0), math.min(b[2], k.y0)
+			b[3], b[4] = math.max(b[3], k.x1), math.max(b[4], k.y1)
 		end
+		bounds[i] = b
 	end
-	session.owner, session.bounds = owner, bounds
+	session.shapes, session.bounds = shapes, bounds
 end
 
 -- Picture pixel bounds of piece i, knobs included: x0, y0 inclusive, x1, y1 exclusive.
@@ -169,8 +155,28 @@ function ns:PieceRect(session, i)
 	return b[1], b[2], b[3], b[4]
 end
 
-function ns:PieceOwner(session, x, y)
-	return session.owner[y * session.decoder.w + x]
+function ns:PieceShape(session, i)
+	return session.shapes[i]
+end
+
+-- Whether piece i covers the point (x, y), in picture pixels.
+function ns:PieceContains(session, i, x, y)
+	local s = session.shapes[i]
+	for _, k in ipairs(s.knobs) do
+		local beyond = k.dx ~= 0 and (x - k.edge) * k.dx > 0 or k.dy ~= 0 and (y - k.edge) * k.dy > 0
+		if beyond and (x - k.cx) ^ 2 + (y - k.cy) ^ 2 <= k.r * k.r then
+			return true
+		end
+	end
+	if x < s.x0 or x >= s.x1 or y < s.y0 or y >= s.y1 then
+		return false
+	end
+	for _, hole in ipairs(s.holes) do
+		if (x - hole.cx) ^ 2 + (y - hole.cy) ^ 2 <= hole.r * hole.r then
+			return false
+		end
+	end
+	return true
 end
 
 function ns:HomePosition(session, i)
@@ -180,13 +186,148 @@ function ns:HomePosition(session, i)
 	return quantize((d.w * self.MARGIN_X + x0) / pw) / COORD, quantize((d.h * self.MARGIN_Y + y0) / ph) / COORD
 end
 
+-- How close counts as lined up, in picture pixels.
+local function snapTolerance(session)
+	local d = session.decoder
+	return math.max(2, math.min(d.w / session.cols, d.h / session.rows) * 0.25)
+end
+
 function ns:IsNearHome(session, i, fx, fy)
 	local hx, hy = self:HomePosition(session, i)
-	local d = session.decoder
 	local pw, ph = self:PlaySize(session)
 	local dx, dy = math.abs(fx - hx) * pw, math.abs(fy - hy) * ph
-	local tolerance = math.max(2, math.min(d.w / session.cols, d.h / session.rows) * 0.25)
+	local tolerance = snapTolerance(session)
 	return dx <= tolerance and dy <= tolerance
+end
+
+local function setPlaced(session, piece, placed, by)
+	if (piece.placed or false) == placed then
+		return
+	end
+	piece.placed = placed
+	session.placedCount = session.placedCount + (placed and 1 or -1)
+	if placed and by then
+		local name = ns:ShortName(by)
+		session.placedBy[name] = (session.placedBy[name] or 0) + 1
+	end
+end
+
+-- Groups --------------------------------------------------------------------------
+-- Pieces snapped together form a group that moves as one. Members keep their home offsets from
+-- each other, so any member's position fixes the whole group's. Every member shares the
+-- group's seq. Joining groups is order-independent, so every client ends up with the same ones.
+
+-- Sorted piece indices; singletons get a fresh { i }.
+function ns:GroupMembers(session, i)
+	return session.pieces[i].group or { i }
+end
+
+local function moveGroup(session, i, x, y, seq, by, holder)
+	local members = ns:GroupMembers(session, i)
+	if #members > 1 and not session.shapes then
+		members = { i }
+	end
+	local hx, hy
+	if session.shapes then
+		hx, hy = ns:HomePosition(session, i)
+	end
+	for _, j in ipairs(members) do
+		local piece = session.pieces[j]
+		if j == i then
+			piece.x, piece.y = x, y
+		else
+			local jx, jy = ns:HomePosition(session, j)
+			piece.x, piece.y = x + jx - hx, y + jy - hy
+		end
+		piece.seq, piece.by = seq, by
+		piece.holder, piece.heldAt = holder, GetTime()
+	end
+end
+
+-- Lines a group up behind its most recently moved member, and places all of it if any of it is.
+local function normalizeGroup(session, members)
+	if #members < 2 or not session.shapes then
+		return
+	end
+	local anchor
+	for _, j in ipairs(members) do
+		local piece = session.pieces[j]
+		if piece.placed then
+			for _, k in ipairs(members) do
+				local other = session.pieces[k]
+				other.x, other.y = ns:HomePosition(session, k)
+				setPlaced(session, other, true, nil)
+			end
+			return
+		end
+		if not anchor or piece.seq > session.pieces[anchor].seq then
+			anchor = j
+		end
+	end
+	local piece = session.pieces[anchor]
+	moveGroup(session, anchor, piece.x, piece.y, piece.seq, piece.by, piece.holder)
+end
+
+local function link(session, a, b)
+	local groupA, groupB = ns:GroupMembers(session, a), ns:GroupMembers(session, b)
+	for _, j in ipairs(groupA) do
+		if j == b then
+			return false
+		end
+	end
+	local merged = {}
+	for _, j in ipairs(groupA) do
+		merged[#merged + 1] = j
+	end
+	for _, j in ipairs(groupB) do
+		merged[#merged + 1] = j
+	end
+	table.sort(merged)
+	for _, j in ipairs(merged) do
+		session.pieces[j].group = merged
+	end
+	normalizeGroup(session, merged)
+	return true
+end
+
+-- The loose neighbor piece i's group lines up with when i is at (fx, fy), and where i snaps to.
+function ns:FindSnap(session, i, fx, fy)
+	local cols = session.cols
+	local pw, ph = self:PlaySize(session)
+	local tolerance = snapTolerance(session)
+	local hx, hy = self:HomePosition(session, i)
+	local members = self:GroupMembers(session, i)
+	local inGroup = {}
+	for _, j in ipairs(members) do
+		inGroup[j] = true
+	end
+	local best, bestDistance, bestX, bestY
+	for _, j in ipairs(members) do
+		local col = (j - 1) % cols
+		local neighbors = { col > 0 and j - 1, col < cols - 1 and j + 1, j - cols, j + cols }
+		for k = 1, 4 do
+			local n = neighbors[k]
+			local other = n and session.pieces[n]
+			if other and not inGroup[n] and not other.placed and not self:IsHeldByOther(other) then
+				local nx, ny = self:HomePosition(session, n)
+				local sx, sy = other.x - (nx - hx), other.y - (ny - hy)
+				local dx, dy = math.abs(fx - sx) * pw, math.abs(fy - sy) * ph
+				if dx <= tolerance and dy <= tolerance and (not best or dx + dy < bestDistance) then
+					best, bestDistance, bestX, bestY = n, dx + dy, sx, sy
+				end
+			end
+		end
+	end
+	return best, bestX, bestY
+end
+
+function ns:LinkPieces(session, a, b)
+	if link(session, a, b) then
+		self:Broadcast(session, format("L:%s:%d:%d", session.id, a, b))
+		for _, j in ipairs(self:GroupMembers(session, a)) do
+			self:OnPieceChanged(session, j)
+		end
+	end
 end
 
 local function scatter(session)
@@ -209,6 +350,11 @@ local function scatter(session)
 		-- Moves can arrive before the picture's size is known; those positions win.
 		if piece.seq == 0 then
 			piece.x, piece.y = quantize(fx) / COORD, quantize(fy) / COORD
+		end
+	end
+	for i, piece in ipairs(session.pieces) do
+		if piece.group and piece.group[1] == i then
+			normalizeGroup(session, piece.group)
 		end
 	end
 end
@@ -301,21 +447,9 @@ function ns:IsComplete(session)
 	return session.pieces and session.placedCount == #session.pieces
 end
 
-local function setPlaced(session, piece, placed, by)
-	if (piece.placed or false) == placed then
-		return
-	end
-	piece.placed = placed
-	session.placedCount = session.placedCount + (placed and 1 or -1)
-	if placed and by then
-		local name = ns:ShortName(by)
-		session.placedBy[name] = (session.placedBy[name] or 0) + 1
-	end
-end
-
 local function sendSetup(session, chatType, target)
-	local text = format("S:%s:%s:%d:%d:%d:%d:%s", session.id, session.channel, session.cols, session.rows,
-		session.chunkCount, session.seed, session.title)
+	local text = format("S:%s:%s:%d:%d:%d:%d:%d:%s", session.id, session.channel, session.cols, session.rows,
+		session.chunkCount, session.seed, session.ghost and 1 or 0, session.title)
 	ns:Send(text, chatType, target)
 end
 
@@ -333,6 +467,7 @@ local function sendSnapshot(session, target)
 	for i, piece in ipairs(session.pieces) do
 		parts[#parts + 1] = ns:EncodeNumber(quantize(piece.x), 2) .. ns:EncodeNumber(quantize(piece.y), 2)
 			.. (piece.placed and "p" or "f") .. ns:EncodeNumber(math.min(piece.seq, 262143), 3)
+			.. ns:EncodeNumber(ns:GroupMembers(session, i)[1], 2)
 		if #parts == SNAPSHOT_PIECES or i == #session.pieces then
 			ns:Send(format("P:%s:%d:%s", session.id, first, table.concat(parts)), "WHISPER", target)
 			first = i + 1
@@ -356,7 +491,7 @@ function ns:PiecesGrid(w, h, count)
 	return cols, rows
 end
 
-function ns:HostSession(code, title, pieceCount, channel)
+function ns:HostSession(code, title, pieceCount, channel, ghost)
 	local decoder = self:NewDecoder()
 	local ok, err = decoder:Feed(code)
 	if not ok then
@@ -383,6 +518,7 @@ function ns:HostSession(code, title, pieceCount, channel)
 	end
 	local chunks = math.ceil(#code / self.MAX_PAYLOAD)
 	applySetup(session, cols, rows, chunks, math.random(1, 2147483646), title, chatType == "GUILD" and "G" or "P")
+	session.ghost = ghost and true or false
 	for i = 1, chunks do
 		session.chunks[i] = code:sub((i - 1) * self.MAX_PAYLOAD + 1, i * self.MAX_PAYLOAD)
 	end
@@ -408,6 +544,17 @@ function ns:EndSession()
 		self:Broadcast(session, "E:" .. session.id)
 		removeSession(session)
 		self:Print("Puzzle ended.")
+	end
+end
+
+function ns:SetGhost(session, ghost)
+	if not session.isMaster or session.ghost == ghost then
+		return
+	end
+	session.ghost = ghost
+	self:Broadcast(session, format("G:%s:%d", session.id, ghost and 1 or 0))
+	if session == self.active then
+		self:RefreshBoard()
 	end
 end
 
@@ -478,18 +625,26 @@ function ns:MovePiece(session, i, fx, fy, state)
 		return
 	end
 	local me = self:PlayerName()
-	piece.seq = piece.seq + 1
-	piece.by = me
-	piece.x, piece.y = quantize(fx) / COORD, quantize(fy) / COORD
-	piece.holder = state == "d" and me or nil
-	piece.heldAt = GetTime()
+	local members = self:GroupMembers(session, i)
+	local seq = 0
+	for _, j in ipairs(members) do
+		seq = math.max(seq, session.pieces[j].seq)
+	end
+	local x, y = quantize(fx) / COORD, quantize(fy) / COORD
 	if state == "p" then
-		piece.x, piece.y = self:HomePosition(session, i)
-		setPlaced(session, piece, true, me)
+		x, y = self:HomePosition(session, i)
+	end
+	moveGroup(session, i, x, y, seq + 1, me, state == "d" and me or nil)
+	if state == "p" then
+		for _, j in ipairs(members) do
+			setPlaced(session, session.pieces[j], true, me)
+		end
 	end
 	self:Broadcast(session, format("M:%s:%d:%d:%d:%d:%s", session.id, i, piece.seq, quantize(piece.x),
 		quantize(piece.y), state), { key = state == "d" and ("M" .. session.id .. i) or nil })
-	self:OnPieceChanged(session, i)
+	for _, j in ipairs(members) do
+		self:OnPieceChanged(session, j)
+	end
 	if state == "p" and self:IsComplete(session) then
 		self:OnComplete(session, true)
 	end
@@ -525,7 +680,13 @@ function receive.S(sender, f)
 		end
 		session = createSession(id, sender)
 	end
-	applySetup(session, cols, rows, chunks, seed, (f[8] or ""):gsub("|", ""), channel == "G" and "G" or "P")
+	applySetup(session, cols, rows, chunks, seed, (f[9] or ""):gsub("|", ""), channel == "G" and "G" or "P")
+	if sender == session.master then
+		session.ghost = f[8] == "1"
+		if not isNew and session == ns.active then
+			ns:RefreshBoard()
+		end
+	end
 	if isNew then
 		-- Heard about it after it started: catch up now so it's ready by the time they open it.
 		if f.channel == "WHISPER" and not lastAnswered["?" .. id] then
@@ -557,20 +718,55 @@ function receive.M(sender, f)
 	if not (piece and seq and x and y) or piece.placed or not isNewer(piece, seq, sender) then
 		return
 	end
-	if ns:IsDragging(session, i) then
-		ns:CancelDrag()
+	local members = ns:GroupMembers(session, i)
+	for _, j in ipairs(members) do
+		if ns:IsDragging(session, j) then
+			ns:CancelDrag()
+		end
 	end
-	piece.seq, piece.by = seq, sender
-	piece.x, piece.y = quantize(x / COORD) / COORD, quantize(y / COORD) / COORD
-	piece.holder = state == "d" and sender or nil
-	piece.heldAt = GetTime()
+	moveGroup(session, i, quantize(x / COORD) / COORD, quantize(y / COORD) / COORD, seq, sender,
+		state == "d" and sender or nil)
 	session.players[ns:ShortName(sender)] = true
 	if state == "p" then
-		setPlaced(session, piece, true, sender)
+		for _, j in ipairs(members) do
+			local member = session.pieces[j]
+			if session.shapes then
+				member.x, member.y = ns:HomePosition(session, j)
+			end
+			setPlaced(session, member, true, sender)
+		end
 	end
-	ns:OnPieceChanged(session, i, true)
+	for _, j in ipairs(members) do
+		ns:OnPieceChanged(session, j, true)
+	end
 	if state == "p" and ns:IsComplete(session) then
 		ns:OnComplete(session, true)
+	end
+end
+
+function receive.L(sender, f)
+	local session, a, b = ns.sessions[f[2]], tonumber(f[3]), tonumber(f[4])
+	local pieces = session and session.pieces
+	if not (pieces and a and b and pieces[a] and pieces[b] and a ~= b) then
+		return
+	end
+	for _, j in ipairs(ns:GroupMembers(session, a)) do
+		if ns:IsDragging(session, j) then
+			ns:CancelDrag()
+		end
+	end
+	for _, j in ipairs(ns:GroupMembers(session, b)) do
+		if ns:IsDragging(session, j) then
+			ns:CancelDrag()
+		end
+	end
+	if link(session, a, b) then
+		for _, j in ipairs(ns:GroupMembers(session, a)) do
+			ns:OnPieceChanged(session, j, true)
+		end
+		if ns:IsComplete(session) then
+			ns:OnComplete(session, true)
+		end
 	end
 end
 
@@ -604,17 +800,29 @@ function receive.P(sender, f)
 	if not (session and session.pieces and first and data and sender == session.master) then
 		return
 	end
-	for n = 0, math.floor(#data / 8) - 1 do
-		local i, pos = first + n, n * 8 + 1
+	local changed = {}
+	for n = 0, math.floor(#data / 10) - 1 do
+		local i, pos = first + n, n * 10 + 1
 		local piece = session.pieces[i]
 		local x, y = ns:DecodeNumber(data, pos, 2), ns:DecodeNumber(data, pos + 2, 2)
 		local seq = ns:DecodeNumber(data, pos + 5, 3)
+		local root = ns:DecodeNumber(data, pos + 8, 2)
 		if piece and x and y and seq and seq >= piece.seq and not piece.placed then
 			piece.seq, piece.by = seq, sender
 			piece.x, piece.y = x / COORD, y / COORD
 			setPlaced(session, piece, data:sub(pos + 4, pos + 4) == "p", nil)
-			ns:OnPieceChanged(session, i)
 		end
+		if piece and root and root ~= i and session.pieces[root] then
+			link(session, root, i)
+		end
+		if piece then
+			for _, j in ipairs(ns:GroupMembers(session, i)) do
+				changed[j] = true
+			end
+		end
+	end
+	for j in pairs(changed) do
+		ns:OnPieceChanged(session, j)
 	end
 	if ns:IsComplete(session) then
 		ns:OnComplete(session, false)
@@ -645,7 +853,17 @@ function receive.E(sender, f)
 	end
 end
 
-local FIELD_COUNTS = { S = 8, D = 4, M = 7, J = 2, Q = 4, P = 4, H = 1, E = 2 }
+function receive.G(sender, f)
+	local session = ns.sessions[f[2]]
+	if session and session.master == sender then
+		session.ghost = f[3] == "1"
+		if session == ns.active then
+			ns:RefreshBoard()
+		end
+	end
+end
+
+local FIELD_COUNTS = { S = 9, G = 3, L = 4, D = 4, M = 7, J = 2, Q = 4, P = 4, H = 1, E = 2 }
 
 function ns:OnMessage(text, channel, sender)
 	local kind = text:sub(1, 1)

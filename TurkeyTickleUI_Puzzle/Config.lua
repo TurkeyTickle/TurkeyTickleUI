@@ -130,8 +130,6 @@ function ns:CreateOptions()
 			"Pulses blue while a new puzzle's picture loads and gold when it's ready to play. Click it to open the puzzle."),
 		createCheckbox(panel, "prompt", "Ask me to open puzzles when they're ready",
 			"Pop up an invitation once a guild or group member's puzzle has finished loading. You'll always get a chat message."),
-		createCheckbox(panel, "ghost", "Show the picture under the pieces",
-			"Draw a faint copy of the picture where the puzzle goes, as a guide."),
 		createCheckbox(panel, "sounds", "Sounds",
 			"Play a sound when a piece snaps into place and when the puzzle is finished."),
 		createSlider(panel, "scale", "Window scale %", 50, 200, 5),

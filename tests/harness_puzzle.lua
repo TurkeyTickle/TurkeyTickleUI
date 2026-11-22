@@ -65,6 +65,26 @@ local methods = {
 		end
 		return tex
 	end,
+	CreateMaskTexture = function(self)
+		local mask = makeWidget(self)
+		if self._client then
+			table.insert(self._client.textures, mask)
+		end
+		return mask
+	end,
+	AddMaskTexture = function(self, mask)
+		self._masks = self._masks or {}
+		assert(#self._masks < 3, "Texture:AddMaskTexture(): Texture already has the maximum number of mask textures (3)")
+		table.insert(self._masks, mask)
+	end,
+	RemoveMaskTexture = function(self, mask)
+		for k, m in ipairs(self._masks or {}) do
+			if m == mask then
+				table.remove(self._masks, k)
+				return
+			end
+		end
+	end,
 	CreateFontString = function() return makeWidget() end,
 }
 makeWidget = function(parent, client)
@@ -353,25 +373,43 @@ local hostTextures, bobTextures = visibleTextures(alice), visibleTextures(bob)
 check(hostTextures > 100 and hostTextures <= 8200 and bobTextures <= 8200,
 	string.format("boards stay inside WoW's texture limit (host %d, Bob %d textures)", hostTextures, bobTextures))
 check(samePieces(hostSession, bobSession), "pieces start in the same places for everyone")
-local sameShapes, notSquare, shaped = true, {}, 0
-local w, h, cols, rows = hostSession.decoder.w, hostSession.decoder.h, hostSession.cols, hostSession.rows
-for y = 0, h - 1 do
-	for x = 0, w - 1 do
-		local owner = hostSession.owner[y * w + x]
-		if bobSession.owner[y * w + x] ~= owner then
-			sameShapes = false
-		end
-		local cell = math.floor(y * rows / h) * cols + math.floor(x * cols / w) + 1
-		if owner ~= cell then
-			notSquare[owner], notSquare[cell] = true, true
-		end
+local function describeShape(s)
+	local parts = { string.format("%d,%d,%d,%d", s.x0, s.y0, s.x1, s.y1) }
+	for _, k in ipairs(s.knobs) do
+		parts[#parts + 1] = string.format("k%.6f,%.6f,%.6f,%d,%d", k.cx, k.cy, k.r, k.dx, k.dy)
 	end
+	for _, hole in ipairs(s.holes) do
+		parts[#parts + 1] = string.format("h%.6f,%.6f,%.6f", hole.cx, hole.cy, hole.r)
+	end
+	return table.concat(parts, " ")
 end
+local sameShapes, shaped = true, 0
 for i = 1, #hostSession.pieces do
-	shaped = shaped + (notSquare[i] and 1 or 0)
+	local s = hostSession.shapes[i]
+	if describeShape(s) ~= describeShape(bobSession.shapes[i]) then
+		sameShapes = false
+	end
+	shaped = shaped + ((#s.knobs + #s.holes > 0) and 1 or 0)
 end
 check(sameShapes, "everyone cuts the same jigsaw shapes")
 check(shaped == #hostSession.pieces, "every piece has knobs or holes, none are plain rectangles")
+local tiles, bounded = true, true
+local w, h = hostSession.decoder.w, hostSession.decoder.h
+for y = 0.25, h, 0.5 do
+	for x = 0.25, w, 0.5 do
+		local covering = 0
+		for i = 1, #hostSession.pieces do
+			if alice.ns:PieceContains(hostSession, i, x, y) then
+				covering = covering + 1
+				local x0, y0, x1, y1 = alice.ns:PieceRect(hostSession, i)
+				bounded = bounded and x >= x0 and x < x1 and y >= y0 and y < y1
+			end
+		end
+		tiles = tiles and covering == 1
+	end
+end
+check(tiles, "the pieces cover the picture exactly once")
+check(bounded, "every piece stays inside its frame")
 print(string.format("     %d messages sent, %d throttled and retried", stats.sent, stats.throttled))
 
 bob.ns:MovePiece(bobSession, 1, 0.1, 0.2, "d")
@@ -396,6 +434,40 @@ check(hostSession.pieces[3].holder == alice.full and bobSession.pieces[3].holder
 alice.ns:MovePiece(hostSession, 3, 0.5, 0.5, "r")
 run(1)
 
+-- Bob snaps piece b onto piece a, then the host moves them as one.
+local ga, gb = 5, 6
+check((ga - 1) % hostSession.cols < hostSession.cols - 1, "test pieces are side by side")
+local function offsetOk(session, x, y)
+	local ax, ay = alice.ns:HomePosition(session, ga)
+	local bx, by = alice.ns:HomePosition(session, gb)
+	local a, b = session.pieces[ga], session.pieces[gb]
+	return math.abs(a.x - x) < 1e-3 and math.abs(a.y - y) < 1e-3
+		and math.abs(b.x - a.x - (bx - ax)) < 1e-3 and math.abs(b.y - a.y - (by - ay)) < 1e-3
+end
+bob.ns:MovePiece(bobSession, ga, 0.1, 0.1, "r")
+local ax, ay = bob.ns:HomePosition(bobSession, ga)
+local bx, by = bob.ns:HomePosition(bobSession, gb)
+local nearX, nearY = 0.1 + bx - ax + 0.002, 0.1 + by - ay
+local neighbor, sx, sy = bob.ns:FindSnap(bobSession, gb, nearX, nearY)
+check(neighbor == ga, "a piece dropped next to its neighbor finds it")
+check(not bob.ns:FindSnap(bobSession, gb, nearX + 0.2, nearY), "a piece dropped far away doesn't snap")
+bob.ns:MovePiece(bobSession, gb, sx, sy, "r")
+bob.ns:LinkPieces(bobSession, gb, ga)
+run(1)
+check(#alice.ns:GroupMembers(hostSession, ga) == 2 and offsetOk(hostSession, 0.1, 0.1),
+	"host sees Bob's two pieces snapped together")
+alice.ns:MovePiece(hostSession, gb, 0.4, 0.5, "r")
+run(1)
+check(offsetOk(bobSession, 0.4 - (bx - ax), 0.5 - (by - ay)), "moving one piece of a group moves the whole group")
+
+check(not hostSession.ghost and not bobSession.ghost, "the picture under the pieces is off by default")
+bob.ns:SetGhost(bobSession, true)
+run(1)
+check(not hostSession.ghost and not bobSession.ghost, "only the host can turn on the picture under the pieces")
+alice.ns:SetGhost(hostSession, true)
+run(1)
+check(hostSession.ghost and bobSession.ghost, "the host turns the picture under the pieces on for everyone")
+
 -- Cara logs in late and catches up.
 login(cara)
 run(8)
@@ -409,6 +481,13 @@ check(caraSession.decoder:IsComplete() and #cara.popups == 1, "Cara loads the pi
 cara.ns:JoinSession(caraSession)
 run(1)
 check(samePieces(hostSession, caraSession), "Cara's pieces match the host's")
+check(caraSession.ghost, "Cara gets the host's picture setting")
+check(#cara.ns:GroupMembers(caraSession, gb) == 2, "Cara catches up on which pieces are snapped together")
+
+local hx, hy = bob.ns:HomePosition(bobSession, gb)
+bob.ns:MovePiece(bobSession, gb, hx, hy, "p")
+run(1)
+check(hostSession.pieces[ga].placed and caraSession.pieces[ga].placed, "placing a group places every piece in it")
 
 for i, piece in ipairs(bobSession.pieces) do
 	if not piece.placed then

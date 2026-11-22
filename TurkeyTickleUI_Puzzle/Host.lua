@@ -70,7 +70,7 @@ local function createDialog()
 	help:SetPoint("TOPLEFT", 20, -70)
 	help:SetWidth(420)
 	help:SetJustifyH("LEFT")
-	help:SetText("Turn any web image into a code with |cffffd100puzzle-image <url>|r (it copies the "
+	help:SetText("Turn an image into a code with |cffffd100ttpz <url or file>|r (it copies the "
 		.. "code to your clipboard), then paste it below with Ctrl+V.")
 
 	-- Codes run to tens of thousands of characters, which a WoW edit box is slow to hold, so the
@@ -163,12 +163,24 @@ local function createDialog()
 	info:SetJustifyH("LEFT")
 	dialog.info = info
 
+	local ghost = CreateFrame("CheckButton", nil, dialog, "UICheckButtonTemplate")
+	ghost:SetSize(24, 24)
+	ghost:SetPoint("BOTTOMLEFT", 16, 16)
+	ghost.label = ghost:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+	ghost.label:SetPoint("LEFT", ghost, "RIGHT", 2, 1)
+	ghost.label:SetText("Show the picture under the pieces")
+	ghost:SetScript("OnClick", function(self)
+		ns.db.hostGhost = self:GetChecked() and true or false
+	end)
+	dialog.ghost = ghost
+
 	local start = CreateFrame("Button", nil, dialog, "UIPanelButtonTemplate")
 	start:SetSize(140, 24)
 	start:SetPoint("BOTTOMRIGHT", -16, 16)
 	start:SetText("Start puzzle")
 	start:SetScript("OnClick", function()
-		local ok, err = ns:HostSession(dialog.pasted, strtrim(name:GetText()), ns.db.pieces, ns.db.channel)
+		local ok, err = ns:HostSession(dialog.pasted, strtrim(name:GetText()), ns.db.pieces, ns.db.channel,
+			ns.db.hostGhost)
 		if ok then
 			dialog:Hide()
 		else
@@ -183,6 +195,7 @@ function ns:ShowHost()
 		createDialog()
 	end
 	dialog.pieces:SetValue(self.db.pieces)
+	dialog.ghost:SetChecked(self.db.hostGhost)
 	refresh()
 	dialog:Show()
 end
