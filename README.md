@@ -61,10 +61,13 @@ All modules share one version, taken from the git tag: plain semver with no `v` 
 `0.3.0-beta.1` / `0.3.0-alpha.1` for test builds). The TOCs say `## Version: @project-version@`, and
 packaging replaces that with the tag. A copy straight from the repository calls itself `dev`.
 
-To release, run the **Release** workflow from the Actions tab and pick which part of the version to
-raise, or give an exact version. Pushing a tag also works. The workflow:
+Work happens on `main`. To release, merge `main` into `prod` (a pull request from `main` to `prod`
+is easiest). Every push to `prod` is a release, and the version is picked for you: the patch number
+goes up (0.2.0 to 0.2.1), unless a commit message since the last release contains `[minor]`
+(0.2.0 to 0.3.0) or `[major]` (0.2.0 to 1.0.0). To release `prod` as it is, or as an exact version
+like `0.3.0-beta.1`, run the **Release** workflow on `prod` from the Actions tab. The workflow:
 
-1. Checks the version (`tools/next_version.sh`) and runs `tests/run_all.sh`
+1. Picks the version (`tools/next_version.sh`) and runs `tests/run_all.sh`
 2. Tags the commit and writes a changelog from the commits since the last release
 3. Packages every module into one zip with the [BigWigs packager](https://github.com/BigWigsMods/packager)
    (`.pkgmeta`) and publishes it as a GitHub release
@@ -76,8 +79,8 @@ To also upload to CurseForge, create the project there, then add a repository se
 skip CurseForge until both exist.
 
 If a Puzzle change needs a new protocol, add the release it will ship in to `PROTOCOL_RELEASES` in
-`TurkeyTickleUI_Puzzle/Session.lua` (see the compatibility notes there). The release check refuses
-to release a version older than that.
+`TurkeyTickleUI_Puzzle/Session.lua` (see the compatibility notes there). The automatic version is
+raised to at least that release, and an exact version older than it is refused.
 
 ## License
 

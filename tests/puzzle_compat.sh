@@ -10,7 +10,7 @@ BASELINE=1d22564 # Puzzle 0.1.0: no protocol versions, no turned pieces
 refs="$*"
 if [ -z "$refs" ]; then
 	refs=$BASELINE
-	latest=$(git describe --tags --abbrev=0 --match 'v[0-9]*' 2>/dev/null || true)
+	latest=$(git tag --list '[0-9]*' --sort=-v:refname | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | head -n1)
 	if [ -n "$latest" ]; then
 		refs="$refs $latest"
 	fi

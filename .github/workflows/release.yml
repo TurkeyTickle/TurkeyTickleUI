@@ -1,24 +1,22 @@
 name: Release
 
-# Run it from the Actions tab to pick the next version, or push a version tag (0.2.0, 0.3.0-beta.1).
-# Either way it tests, packages every module into one zip with the version stamped into each TOC,
-# and publishes a GitHub release with the ttpz image tool for Windows and Linux attached. It also
-# uploads the addon zip to CurseForge once the repository has a CF_API_KEY secret and a
-# CURSEFORGE_PROJECT_ID variable.
+# Every push to prod (merging main into it) is a release. The version is picked automatically
+# (tools/next_version.sh): the patch number goes up, or the minor / major number when a commit
+# message since the last release says [minor] / [major]. The workflow tests, tags, packages every
+# module into one zip with the version stamped into each TOC, publishes a GitHub release with the
+# ttpz image tool for Windows and Linux attached, and uploads the zip to CurseForge once the
+# repository has a CF_API_KEY secret and a CURSEFORGE_PROJECT_ID variable.
+#
+# Running it by hand on prod releases prod as it is, optionally as an exact version such as a beta.
 
 on:
+  push:
+    branches: [prod]
   workflow_dispatch:
     inputs:
-      bump:
-        description: Which part of the latest version to raise
-        type: choice
-        options: [minor, patch, major]
-        default: minor
       version:
-        description: Or an exact version (e.g. 0.2.0 or 0.3.0-beta.1), instead of raising one
+        description: Exact version (e.g. 0.3.0-beta.1); leave empty to pick it automatically
         required: false
-  push:
-    tags: ['[0-9]+.[0-9]+.[0-9]+*']
 
 permissions:
   contents: write
@@ -26,7 +24,9 @@ permissions:
 concurrency: release
 
 jobs:
+  # Only prod releases, and creating the branch doesn't count as a release.
   ttpz:
+    if: github.ref == 'refs/heads/prod' && !github.event.created
     uses: ./.github/workflows/ttpz.yml
 
   release:
@@ -40,16 +40,14 @@ jobs:
       - name: Pick the version
         id: version
         env:
-          REQUEST: ${{ inputs.version || inputs.bump }}
+          REQUEST: ${{ inputs.version || 'auto' }}
         run: |
-          if [ "$GITHUB_EVENT_NAME" = push ]; then
-            # Already tagged: check it like a new one, minus the tag that triggered this.
-            git tag -d "$GITHUB_REF_NAME" >/dev/null
-            version=$(tools/next_version.sh "$GITHUB_REF_NAME")
-            git fetch --quiet origin "refs/tags/$GITHUB_REF_NAME:refs/tags/$GITHUB_REF_NAME"
-          else
-            version=$(tools/next_version.sh "$REQUEST")
+          released=$(git tag --points-at HEAD | grep -E '^[0-9]+\.[0-9]+\.[0-9]+' || true)
+          if [ -n "$released" ]; then
+            echo "This commit is already released as $released." | tee -a "$GITHUB_STEP_SUMMARY"
+            exit 1
           fi
+          version=$(tools/next_version.sh "$REQUEST")
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "Releasing $version" >> "$GITHUB_STEP_SUMMARY"
 
@@ -60,7 +58,6 @@ jobs:
         run: tests/run_all.sh
 
       - name: Tag
-        if: github.event_name == 'workflow_dispatch'
         env:
           VERSION: ${{ steps.version.outputs.version }}
         run: |
@@ -73,7 +70,7 @@ jobs:
         env:
           VERSION: ${{ steps.version.outputs.version }}
         run: |
-          previous=$(git describe --tags --abbrev=0 --match '[0-9]*' "$VERSION^" 2>/dev/null || true)
+          previous=$(git tag --list '[0-9]*' --sort=-v:refname | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | grep -vxF "$VERSION" | head -n1)
           {
             echo "# Turkey Tickle UI $VERSION"
             echo
@@ -81,19 +78,16 @@ jobs:
           } > CHANGELOG.md
           cat CHANGELOG.md >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Packager options
-        id: options
-        env:
-          CURSEFORGE_PROJECT_ID: ${{ vars.CURSEFORGE_PROJECT_ID }}
-        run: echo "args=${CURSEFORGE_PROJECT_ID:+-p $CURSEFORGE_PROJECT_ID}" >> "$GITHUB_OUTPUT"
-
       - name: Package and publish
-        uses: BigWigsMods/packager@v2
-        with:
-          args: ${{ steps.options.outputs.args }}
         env:
           GITHUB_OAUTH: ${{ secrets.GITHUB_TOKEN }}
           CF_API_KEY: ${{ secrets.CF_API_KEY }}
+          CURSEFORGE_PROJECT_ID: ${{ vars.CURSEFORGE_PROJECT_ID }}
+        run: |
+          curl -sSfL -o "$RUNNER_TEMP/release.sh" https://raw.githubusercontent.com/BigWigsMods/packager/v2/release.sh
+          # On a branch push the packager skips tagged commits, expecting a separate run for the tag.
+          # This run made the tag, so it packages as if started by hand.
+          GITHUB_EVENT_NAME=workflow_dispatch bash "$RUNNER_TEMP/release.sh" ${CURSEFORGE_PROJECT_ID:+-p "$CURSEFORGE_PROJECT_ID"}
 
       - uses: actions/download-artifact@v8
         with:
