@@ -8,9 +8,11 @@ publish = false
 [dependencies]
 image = { version = "0.25", default-features = false, features = ["bmp", "gif", "jpeg", "png", "webp"] }
 
-# Windows has its own TLS (SChannel), so Windows builds need no C toolchain.
+# Windows has its own TLS (SChannel), so Windows builds need no C toolchain. Certificates are
+# checked against the Windows store: SChannel can end a valid chain at a root that isn't
+# byte-for-byte one of the bundled webpki roots, and ureq then rejects it.
 [target.'cfg(windows)'.dependencies]
-ureq = { version = "3", default-features = false, features = ["native-tls"] }
+ureq = { version = "3", default-features = false, features = ["native-tls-no-default"] }
 
 [target.'cfg(not(windows))'.dependencies]
 ureq = { version = "3", default-features = false, features = ["rustls"] }

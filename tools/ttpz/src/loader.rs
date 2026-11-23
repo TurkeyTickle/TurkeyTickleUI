@@ -25,7 +25,10 @@ pub fn read(source: &str) -> Result<Vec<u8>, String> {
         .user_agent("Mozilla/5.0 TurkeyTickleUI-puzzle");
     #[cfg(windows)]
     let config = config.tls_config(
-        ureq::tls::TlsConfig::builder().provider(ureq::tls::TlsProvider::NativeTls).build(),
+        ureq::tls::TlsConfig::builder()
+            .provider(ureq::tls::TlsProvider::NativeTls)
+            .root_certs(ureq::tls::RootCerts::PlatformVerifier)
+            .build(),
     );
     let agent: ureq::Agent = config.build().into();
     let mut response = agent.get(source).call().map_err(|e| e.to_string())?;
