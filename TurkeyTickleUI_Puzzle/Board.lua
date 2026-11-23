@@ -1094,9 +1094,9 @@ local function createWindow()
 	window:SetScript("OnDragStop", window.StopMovingOrSizing)
 	createSizeGrip()
 	if window.SetPortraitToAsset then
-		window:SetPortraitToAsset("Interface\\Icons\\INV_Misc_Note_02")
+		window:SetPortraitToAsset(ns.ICON)
 	elseif window.GetPortrait and window:GetPortrait() then
-		window:GetPortrait():SetTexture("Interface\\Icons\\INV_Misc_Note_02")
+		window:GetPortrait():SetTexture(ns.ICON)
 	end
 
 	window.endButton = createButton(window, "End puzzle", 100, "End", 50, function()

@@ -5,7 +5,7 @@
 ## Version: @project-version@
 ## Category: Turkey Tickle UI
 ## Group: TurkeyTickleUI
-## IconTexture: Interface\Icons\INV_Misc_Note_02
+## IconTexture: Interface\AddOns\TurkeyTickleUI_Puzzle\Media\Icon
 ## SavedVariables: TurkeyTickleUI_PuzzleDB
 ## AddonCompartmentFunc: TurkeyTickleUI_Puzzle_OnAddonCompartmentClick
 

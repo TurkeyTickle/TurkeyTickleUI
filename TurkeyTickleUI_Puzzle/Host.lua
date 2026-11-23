@@ -51,9 +51,9 @@ local function createDialog()
 		dialog:SetTitle("Host a Jigsaw Puzzle")
 	end
 	if dialog.SetPortraitToAsset then
-		dialog:SetPortraitToAsset("Interface\\Icons\\INV_Misc_Note_02")
+		dialog:SetPortraitToAsset(ns.ICON)
 	elseif dialog.GetPortrait and dialog:GetPortrait() then
-		dialog:GetPortrait():SetTexture("Interface\\Icons\\INV_Misc_Note_02")
+		dialog:GetPortrait():SetTexture(ns.ICON)
 	end
 
 	local nameLabel = dialog:CreateFontString(nil, "ARTWORK", "GameFontNormal")

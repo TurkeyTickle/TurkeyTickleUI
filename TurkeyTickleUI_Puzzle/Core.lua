@@ -12,6 +12,10 @@ ns.defaults = {
 	minimapAngle = 200,
 }
 
+ns.ICON = "Interface\\AddOns\\" .. ADDON .. "\\Media\\Icon"
+-- The minimap draws the icon at 17px, too small to shrink the 128px one cleanly.
+ns.ICON_SMALL = "Interface\\AddOns\\" .. ADDON .. "\\Media\\IconSmall"
+
 -- Releases get their version stamped into the TOC; a copy straight from the repository is "dev".
 local version = C_AddOns and C_AddOns.GetAddOnMetadata and C_AddOns.GetAddOnMetadata(ADDON, "Version")
 ns.VERSION = version and not version:find("@", 1, true) and version:gsub("[:|]", "") or "dev"

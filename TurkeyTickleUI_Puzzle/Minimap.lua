@@ -1,6 +1,5 @@
 local ADDON, ns = ...
 
-local ICON = "Interface\\Icons\\INV_Misc_Note_02"
 local EDGE_PADDING = 10
 local LOADING_COLOR = { 0.4, 0.7, 1.0 }
 local READY_COLOR = { 1.0, 0.82, 0.0 }
@@ -95,7 +94,7 @@ local function createButton()
 	button.icon = button:CreateTexture(nil, "ARTWORK")
 	button.icon:SetSize(17, 17)
 	button.icon:SetPoint("TOPLEFT", 7, -6)
-	button.icon:SetTexture(ICON)
+	button.icon:SetTexture(ns.ICON_SMALL)
 	local border = button:CreateTexture(nil, "OVERLAY")
 	border:SetSize(53, 53)
 	border:SetPoint("TOPLEFT")
