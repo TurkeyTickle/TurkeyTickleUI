@@ -880,5 +880,40 @@ if LEGACY_DIR then
 	run(2)
 end
 
+-- Many cuts. Knobs pushed into one piece near a corner can overlap; the smaller is cut around the
+-- bigger, so every cut still covers the picture exactly once.
+local quiet = alice.env.print
+alice.env.print = function() end
+local cuts, rivals, badCut = 0, 0, nil
+for round = 1, 15 do
+	for _, count in ipairs({ 24, 48, 100 }) do
+		alice.ns:HostSession(sample, "Cut " .. round, count, "GUILD")
+		local s = alice.ns.active
+		cuts = cuts + 1
+		for _, shape in ipairs(s.shapes) do
+			for _, k in ipairs(shape.knobs) do
+				rivals = rivals + #k.rivals
+			end
+		end
+		for y = 0.5, s.decoder.h, 1 do
+			for x = 0.5, s.decoder.w, 1 do
+				local covering = 0
+				for i = 1, #s.pieces do
+					if alice.ns:PieceContains(s, i, x, y) then
+						covering = covering + 1
+					end
+				end
+				if covering ~= 1 and not badCut then
+					badCut = string.format("%d pieces, seed %d: (%.1f, %.1f) is in %d pieces", #s.pieces, s.seed, x, y, covering)
+				end
+			end
+		end
+	end
+end
+alice.ns:EndSession()
+alice.env.print = quiet
+check(rivals > 0, string.format("some cuts have knobs that would overlap (%d in %d cuts)", rivals, cuts))
+check(not badCut, "every cut covers the picture exactly once" .. (badCut and (": " .. badCut) or ""))
+
 check(#errors == 0, "no Lua errors")
 print("done")

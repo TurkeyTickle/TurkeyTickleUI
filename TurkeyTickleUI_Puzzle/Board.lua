@@ -457,6 +457,11 @@ local function drawStrips(owner, strips, originX, originY, scale)
 		wipe(stripMasks)
 		if shape and region.knob then
 			stripMasks[1] = owner.knobMasks[region.knob]
+			for _, cut in ipairs(owner.knobCuts[region.knob]) do
+				if x0 < cut.cx + cut.r and x1 > cut.cx - cut.r and y0 < cut.cy + cut.r and y1 > cut.cy - cut.r then
+					stripMasks[#stripMasks + 1] = cut.mask
+				end
+			end
 		elseif shape then
 			for _, h in ipairs(region.holes) do
 				local hole = shape.holes[h]
@@ -519,11 +524,29 @@ local function drawShape(frame, shape, scale)
 		placeTurned(frame, tex, band[1], band[2], band[3] - band[1], band[4] - band[2])
 		setMasks(tex, masks)
 	end
+	frame.knobCuts = frame.knobCuts or {}
+	local cutCount = 0
 	for k, knob in ipairs(shape.knobs) do
 		local x, y, r = (knob.cx - ox) * scale, (knob.cy - oy) * scale, knob.r * scale
 		placeCircle(pooledMask(frame, "knobMasks", k, "Knob", "CLAMPTOBLACKADDITIVE"), frame, x, y, r)
 		local edgeMask = pooledMask(frame, "knobEdgeMasks", k, "Knob", "CLAMPTOBLACKADDITIVE")
 		placeCircle(edgeMask, frame, x, y, r + EDGE_WIDTH)
+		-- A rival knob that keeps the overlap is cut out of this one, picture and outline alike.
+		local cuts, edgeMasks = {}, { edgeMask }
+		for c, rival in ipairs(knob.rivals) do
+			if c < MAX_MASKS then
+				local key = (k - 1) * MAX_MASKS + c
+				local rx, ry, rr = (rival.cx - ox) * scale, (rival.cy - oy) * scale, rival.r * scale
+				local mask = pooledMask(frame, "knobCutMasks", key, "Hole", "CLAMP")
+				placeCircle(mask, frame, rx, ry, rr - SEAM)
+				cuts[c] = { mask = mask, cx = rival.cx, cy = rival.cy, r = rival.r }
+				local edgeCut = pooledMask(frame, "knobEdgeCutMasks", key, "Hole", "CLAMP")
+				placeCircle(edgeCut, frame, rx, ry, rr - EDGE_WIDTH)
+				edgeMasks[#edgeMasks + 1] = edgeCut
+				cutCount = cutCount + 2
+			end
+		end
+		frame.knobCuts[k] = cuts
 		-- Only the part past the grown cell, which the body outline already covers.
 		local reach = r + EDGE_WIDTH
 		local x0, y0, x1, y1 = x - reach, y - reach, x + reach, y + reach
@@ -533,11 +556,11 @@ local function drawShape(frame, shape, scale)
 		used = used + 1
 		local tex = pooled(frame, "outline", used, "BACKGROUND")
 		placeTurned(frame, tex, x0, y0, x1 - x0, y1 - y0)
-		setMasks(tex, { edgeMask })
+		setMasks(tex, edgeMasks)
 	end
 	hideUnused(frame, "outline", used)
 	frame.outlineCount = used
-	frame.textureCount = used + 2 * (#shape.knobs + #shape.holes)
+	frame.textureCount = used + 2 * (#shape.knobs + #shape.holes) + cutCount
 end
 
 local function clearRegion(owner)

@@ -132,12 +132,12 @@ local function buildShapes(session)
 
 	session.rng = session.seed % 2147483646 + 1
 	local function knob(fromCell, intoCell, cx, cy, radius, dx, dy, edge)
-		local k = { cx = cx, cy = cy, r = radius, dx = dx, dy = dy, edge = edge,
+		local k = { cx = cx, cy = cy, r = radius, dx = dx, dy = dy, edge = edge, from = fromCell, rivals = {},
 			x0 = math.floor(cx - radius), y0 = math.floor(cy - radius), x1 = math.ceil(cx + radius), y1 = math.ceil(cy + radius) }
 		if dx > 0 then k.x0 = edge elseif dx < 0 then k.x1 = edge end
 		if dy > 0 then k.y0 = edge elseif dy < 0 then k.y1 = edge end
 		tinsert(shapes[fromCell].knobs, k)
-		tinsert(shapes[intoCell].holes, { cx = cx, cy = cy, r = radius })
+		tinsert(shapes[intoCell].holes, { cx = cx, cy = cy, r = radius, knob = k })
 	end
 	for r = 0, rows - 1 do
 		for c = 0, cols - 1 do
@@ -162,6 +162,25 @@ local function buildShapes(session)
 					from, into = into, from
 				end
 				knob(from, into, cx, rowY[r + 1] + out * KNOB_REACH * radius, radius, 0, out, rowY[r + 1])
+			end
+		end
+	end
+
+	-- Two knobs pushed into one cell near a corner can overlap. The bigger one (or, the same size,
+	-- the one from the lower cell) keeps the overlap and the other is cut around it. Knob boxes and
+	-- bounds stay as 0.1.0 cuts them, so every version still puts pieces in the same places.
+	for _, s in ipairs(shapes) do
+		for a = 1, #s.holes - 1 do
+			for b = a + 1, #s.holes do
+				local ka, kb = s.holes[a].knob, s.holes[b].knob
+				if (ka.cx - kb.cx) ^ 2 + (ka.cy - kb.cy) ^ 2 < (ka.r + kb.r) ^ 2 then
+					local aWins = ka.r > kb.r or ka.r == kb.r and ka.from < kb.from
+					local winner, loser = ka, kb
+					if not aWins then
+						winner, loser = kb, ka
+					end
+					tinsert(loser.rivals, winner)
+				end
 			end
 		end
 	end
@@ -194,6 +213,11 @@ function ns:PieceContains(session, i, x, y)
 	for _, k in ipairs(s.knobs) do
 		local beyond = k.dx ~= 0 and (x - k.edge) * k.dx > 0 or k.dy ~= 0 and (y - k.edge) * k.dy > 0
 		if beyond and (x - k.cx) ^ 2 + (y - k.cy) ^ 2 <= k.r * k.r then
+			for _, rival in ipairs(k.rivals) do
+				if (x - rival.cx) ^ 2 + (y - rival.cy) ^ 2 <= rival.r * rival.r then
+					return false
+				end
+			end
 			return true
 		end
 	end
