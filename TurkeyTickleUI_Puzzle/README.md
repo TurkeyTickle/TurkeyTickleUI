@@ -29,7 +29,10 @@ picture and everyone in the guild (or party / raid) with the addon puts it toget
 ## Hosting a puzzle
 
 1. Turn an image into a code with the `ttpz` tool (JPEG, PNG, WebP, GIF, BMP; a web URL or
-   a file):
+   a file). Download it from the latest
+   [GitHub release](https://github.com/TurkeyTickle/TurkeyTickleUI/releases):
+   `ttpz-windows-x86_64.exe` for Windows or `ttpz-linux-x86_64` for Linux (run
+   `chmod +x ttpz-linux-x86_64` first). Rename it to `ttpz` if you like. Run it from a terminal:
 
    ```
    ttpz https://example.com/picture.jpg
@@ -79,7 +82,8 @@ older versions can't follow gets a new protocol number.
 
 ## Building the image tool
 
-`tools/ttpz` is a Rust program that builds to a single self-contained executable:
+Releases come with ready-made builds, so this is only needed for other platforms or changes to the
+tool. `tools/ttpz` is a Rust program that builds to a single self-contained executable:
 
 ```
 cargo build --release --manifest-path tools/ttpz/Cargo.toml

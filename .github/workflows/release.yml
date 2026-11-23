@@ -2,8 +2,9 @@ name: Release
 
 # Run it from the Actions tab to pick the next version, or push a version tag (0.2.0, 0.3.0-beta.1).
 # Either way it tests, packages every module into one zip with the version stamped into each TOC,
-# and publishes a GitHub release. It also uploads to CurseForge once the repository has a
-# CF_API_KEY secret and a CURSEFORGE_PROJECT_ID variable.
+# and publishes a GitHub release with the ttpz image tool for Windows and Linux attached. It also
+# uploads the addon zip to CurseForge once the repository has a CF_API_KEY secret and a
+# CURSEFORGE_PROJECT_ID variable.
 
 on:
   workflow_dispatch:
@@ -25,7 +26,11 @@ permissions:
 concurrency: release
 
 jobs:
+  ttpz:
+    uses: ./.github/workflows/ttpz.yml
+
   release:
+    needs: ttpz
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -89,3 +94,15 @@ jobs:
         env:
           GITHUB_OAUTH: ${{ secrets.GITHUB_TOKEN }}
           CF_API_KEY: ${{ secrets.CF_API_KEY }}
+
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: ttpz-*
+          path: ttpz
+          merge-multiple: true
+
+      - name: Attach ttpz to the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: gh release upload "$VERSION" ttpz/* --clobber

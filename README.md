@@ -68,6 +68,8 @@ raise, or give an exact version. Pushing a tag also works. The workflow:
 2. Tags the commit and writes a changelog from the commits since the last release
 3. Packages every module into one zip with the [BigWigs packager](https://github.com/BigWigsMods/packager)
    (`.pkgmeta`) and publishes it as a GitHub release
+4. Attaches the `ttpz` image tool, built for Windows and Linux (`.github/workflows/ttpz.yml`, which
+   CI also runs on every push)
 
 To also upload to CurseForge, create the project there, then add a repository secret
 `CF_API_KEY` (a CurseForge API token) and a repository variable `CURSEFORGE_PROJECT_ID`. Releases

@@ -1,0 +1,55 @@
+name: ttpz
+
+# Builds the image tool for each platform hosts use and uploads each as an artifact named after its
+# release file. CI and Release both call this.
+
+on:
+  workflow_call:
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-musl # static, so it runs on any distribution
+            binary: ttpz
+            file: ttpz-linux-x86_64
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            binary: ttpz.exe
+            file: ttpz-windows-x86_64.exe
+            rustflags: -C target-feature=+crt-static # no Visual C++ runtime needed
+    runs-on: ${{ matrix.os }}
+    env:
+      RUSTFLAGS: ${{ matrix.rustflags }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - name: Install musl
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: tools/ttpz
+          key: ${{ matrix.target }}
+      - name: Test
+        run: cargo test --locked --manifest-path tools/ttpz/Cargo.toml --target ${{ matrix.target }}
+      - name: Build
+        run: cargo build --release --locked --manifest-path tools/ttpz/Cargo.toml --target ${{ matrix.target }}
+      - name: Turn a picture into a code
+        run: |
+          mkdir dist
+          cp "tools/ttpz/target/${{ matrix.target }}/release/${{ matrix.binary }}" "dist/${{ matrix.file }}"
+          "dist/${{ matrix.file }}" tests/fixtures/gradient.bmp --out code.txt
+          head -c 6 code.txt | grep -qx 'TTPZ1:' || { echo "ttpz wrote something other than an image code"; exit 1; }
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.file }}
+          path: dist/${{ matrix.file }}
+          if-no-files-found: error
