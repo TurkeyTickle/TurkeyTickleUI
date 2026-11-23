@@ -4,12 +4,21 @@ ns.defaults = {
 	scale = 100,
 	prompt = true,
 	hostGhost = false, -- the picture under the pieces, for puzzles we host
+	hostRotate = false, -- pieces start turned, for puzzles we host
 	sounds = true,
 	pieces = 24,
 	channel = "GUILD", -- "GUILD" or "GROUP"
 	minimap = true,
 	minimapAngle = 200,
 }
+
+-- Releases get their version stamped into the TOC; a copy straight from the repository is "dev".
+local version = C_AddOns and C_AddOns.GetAddOnMetadata and C_AddOns.GetAddOnMetadata(ADDON, "Version")
+ns.VERSION = version and not version:find("@", 1, true) and version:gsub("[:|]", "") or "dev"
+
+function ns:VersionName(v)
+	return v == "dev" and "a development copy" or v
+end
 
 local function copyDefaults(dst, src)
 	for k, v in pairs(src) do
@@ -112,13 +121,15 @@ SlashCmdList.TURKEYTICKLEUI_PUZZLE = function(msg)
 	elseif cmd == "host" or cmd == "new" then
 		ns:ShowHost()
 	elseif cmd == "join" then
-		ns:JoinSession(ns:FindSession(rest))
+		ns:JoinSession(ns:FindSession(rest), rest)
 	elseif cmd == "leave" then
 		ns:LeaveSession()
 	elseif cmd == "end" then
 		ns:EndSession()
 	elseif cmd == "status" then
 		ns:PrintStatus()
+	elseif cmd == "version" then
+		ns:Print(format("version %s (puzzle protocol %d)", ns.VERSION, ns.PROTOCOL))
 	elseif cmd == "reset" then
 		wipe(TurkeyTickleUI_PuzzleDB)
 		copyDefaults(TurkeyTickleUI_PuzzleDB, ns.defaults)
@@ -127,7 +138,7 @@ SlashCmdList.TURKEYTICKLEUI_PUZZLE = function(msg)
 	elseif cmd == "" then
 		ns:Toggle()
 	else
-		ns:Print("/ttpz [host | join [name] | leave | end | status | options | reset]")
+		ns:Print("/ttpz [host | join [name] | leave | end | status | version | options | reset]")
 	end
 end
 

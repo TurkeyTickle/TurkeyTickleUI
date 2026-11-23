@@ -119,10 +119,9 @@ function ns:CreateOptions()
 	title:SetPoint("TOPLEFT", 16, -16)
 	title:SetText(SUITE_NAME .. ": Puzzle")
 
-	local version = C_AddOns and C_AddOns.GetAddOnMetadata and C_AddOns.GetAddOnMetadata(ADDON, "Version")
 	local subtitle = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
 	subtitle:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -6)
-	subtitle:SetText((version and ("v" .. version .. "  ") or "")
+	subtitle:SetText((ns.VERSION == "dev" and "dev" or "v" .. ns.VERSION) .. "  "
 		.. "Type /ttpz to open the puzzle, /ttpz host to start one.")
 
 	local controls = {

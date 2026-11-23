@@ -17,7 +17,11 @@ picture and everyone in the guild (or party / raid) with the addon puts it toget
 - Pieces snap into place near their spot; placed pieces lock
 - Drop a piece next to a matching neighbor anywhere on the board and they snap together; move the
   group as one and drop it into place
-- Resize the window from its corner; scroll to zoom, right-drag to pan
+- Optional turned pieces (the host decides): pieces start at random quarter turns. Scroll while
+  dragging a piece to turn it either way. Only upright pieces drop into
+  place, and neighbors only snap together when they're turned the same way
+- Resize the window from its corner, down to a small 320 x 240 to keep it on screen while you play;
+  scroll to zoom, right-drag to pan
 - Players who log in or join late catch up on the picture and every piece's position
 - A faint copy of the picture under the board as a guide (off unless the host turns it on)
 - A results banner when the puzzle is done, with who placed the most pieces
@@ -36,7 +40,10 @@ picture and everyone in the guild (or party / raid) with the addon puts it toget
    default 192; use 128 for a picture that arrives in about 10 seconds), `--colors` (up to 64), `--dither` (smoother photos), `--preview out.png` (see what
    players will get), `--out code.txt` (write the code to a file). See [Building the image tool](#building-the-image-tool).
 2. In game, type `/ttpz host`, paste the code, name the puzzle, pick the number of pieces and whether
-   to play with your guild or your party / raid, and click **Start puzzle**.
+   to play with your guild or your party / raid, and click **Start puzzle**. Tick **Pieces start
+   turned** for a harder puzzle where pieces have to be turned upright. Not in a party? Choose
+   party / raid anyway and you'll be asked whether to puzzle alone; anyone who joins your party
+   later can play along.
 
 No image handy? Click **Use sample picture** in the host window.
 
@@ -46,13 +53,29 @@ No image handy? Click **Use sample picture** in the host window.
 | ------------------ | ------ |
 | `/ttpz`            | Open the puzzle (or join the latest one, or host if there isn't one) |
 | `/ttpz host`       | Host a new puzzle |
-| `/ttpz join [name]`| Join the latest puzzle, or the one hosted by `name` |
+| `/ttpz join [name]`| Join the latest puzzle, or the one hosted by `name`. If you haven't heard about one (it started before you logged in), asks your guild and group and joins the puzzle in progress |
 | `/ttpz leave`      | Stop playing (you can rejoin later) |
 | `/ttpz end`        | End your puzzle for everyone (host only) |
 | `/ttpz status`     | List puzzles and their progress |
+| `/ttpz version`    | Show your addon version and puzzle protocol |
 | `/ttpz options`    | Open the options |
 
 Options live under **Options > AddOns > Turkey Tickle UI > Puzzle**.
+
+## Playing with older versions
+
+Players don't all need the same version. Anyone can play a puzzle that only uses features their
+version has. A puzzle without turned pieces works with every version back to 0.1.0, whoever hosts
+it.
+
+When a puzzle needs something newer, players who can't play it get a chat message naming the host's
+version, their own, and the version to update to. The host gets a message too, once per player,
+naming who can't join and what they need. 0.1.0 came out before version checks, so its players don't
+see the puzzle or get a message; only the host is told. Puzzles with turned pieces need 0.2.0.
+
+For developers: `Session.lua` documents the message format and the compatibility rules. Each change
+older versions can't follow gets a new protocol number.
+`tests/puzzle_compat.sh` plays the current code against 0.1.0 and the latest release.
 
 ## Building the image tool
 

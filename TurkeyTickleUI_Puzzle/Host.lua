@@ -37,7 +37,7 @@ local function createDialog()
 	if not ns:GamepadUI() then
 		tinsert(UISpecialFrames, "TurkeyTickleUIPuzzleHost")
 	end
-	dialog:SetSize(460, 320)
+	dialog:SetSize(460, 344)
 	dialog:SetPoint("CENTER")
 	dialog:SetFrameStrata("DIALOG")
 	dialog:SetToplevel(true)
@@ -174,21 +174,54 @@ local function createDialog()
 	end)
 	dialog.ghost = ghost
 
+	local rotate = CreateFrame("CheckButton", nil, dialog, "UICheckButtonTemplate")
+	rotate:SetSize(24, 24)
+	rotate:SetPoint("BOTTOMLEFT", ghost, "TOPLEFT", 0, 0)
+	rotate.label = rotate:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+	rotate.label:SetPoint("LEFT", rotate, "RIGHT", 2, 1)
+	rotate.label:SetText("Pieces start turned (scroll while dragging to turn one)")
+	rotate:SetScript("OnClick", function(self)
+		ns.db.hostRotate = self:GetChecked() and true or false
+	end)
+	dialog.rotate = rotate
+
 	local start = CreateFrame("Button", nil, dialog, "UIPanelButtonTemplate")
 	start:SetSize(140, 24)
 	start:SetPoint("BOTTOMRIGHT", -16, 16)
 	start:SetText("Start puzzle")
-	start:SetScript("OnClick", function()
-		local ok, err = ns:HostSession(dialog.pasted, strtrim(name:GetText()), ns.db.pieces, ns.db.channel,
-			ns.db.hostGhost)
+	function dialog.Start(alone)
+		local ok, err, reason = ns:HostSession(dialog.pasted, strtrim(name:GetText()), ns.db.pieces, ns.db.channel,
+			ns.db.hostGhost, ns.db.hostRotate, alone)
 		if ok then
+			dialog.pasted = ""
+			name:SetText("")
 			dialog:Hide()
+		elseif reason == "noGroup" then
+			StaticPopup_Show("TURKEYTICKLEUI_PUZZLE_ALONE")
 		else
 			info:SetText("|cffff5050" .. err .. "|r")
 		end
+	end
+	start:SetScript("OnClick", function()
+		dialog.Start(false)
 	end)
 	dialog.start = start
 end
+
+StaticPopupDialogs.TURKEYTICKLEUI_PUZZLE_ALONE = {
+	text = "You're not in a party or raid.\n\nPuzzle alone? Anyone who joins your party later can play along.",
+	button1 = "Puzzle alone",
+	button2 = "Cancel",
+	OnAccept = function()
+		if dialog and dialog:IsShown() then
+			dialog.Start(true)
+		end
+	end,
+	timeout = 0,
+	whileDead = true,
+	hideOnEscape = true,
+	preferredIndex = 3,
+}
 
 function ns:ShowHost()
 	if not dialog then
@@ -196,6 +229,7 @@ function ns:ShowHost()
 	end
 	dialog.pieces:SetValue(self.db.pieces)
 	dialog.ghost:SetChecked(self.db.hostGhost)
+	dialog.rotate:SetChecked(self.db.hostRotate)
 	refresh()
 	dialog:Show()
 end

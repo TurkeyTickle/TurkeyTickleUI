@@ -1,13 +1,30 @@
 -- Runs several copies of TurkeyTickleUI_Puzzle against a fake guild channel with the client's
 -- addon message throttle, then checks they all end up with the same picture and pieces.
---   luajit tests/harness_puzzle.lua TurkeyTickleUI_Puzzle [image code file]
-local ADDON_DIR = arg[1] or "TurkeyTickleUI_Puzzle"
-local EXTRA_CODE_FILE = arg[2]
-local FILES = {}
-for line in io.lines(ADDON_DIR .. "/TurkeyTickleUI_Puzzle.toc") do
-	if line:match("%.lua%s*$") then
-		FILES[#FILES + 1] = line:gsub("%s+$", "")
+--   luajit tests/harness_puzzle.lua TurkeyTickleUI_Puzzle [image code file] [--legacy OLD_ADDON_DIR]
+-- With --legacy, also plays against a copy of an older release (tests/puzzle_compat.sh makes one).
+local positional, LEGACY_DIR = {}, nil
+do
+	local i = 1
+	while arg[i] do
+		if arg[i] == "--legacy" then
+			LEGACY_DIR = arg[i + 1]
+			i = i + 1
+		else
+			positional[#positional + 1] = arg[i]
+		end
+		i = i + 1
 	end
+end
+local ADDON_DIR = positional[1] or "TurkeyTickleUI_Puzzle"
+local EXTRA_CODE_FILE = positional[2]
+local function tocFiles(dir)
+	local files = {}
+	for line in io.lines(dir .. "/TurkeyTickleUI_Puzzle.toc") do
+		if line:match("%.lua%s*$") then
+			files[#files + 1] = line:gsub("%s+$", "")
+		end
+	end
+	return files
 end
 local LATENCY = 0.1
 local STEP = 0.05
@@ -101,8 +118,10 @@ end
 -- Forever names: UnitName is the first name, UnitFullName returns the surname (or the realm
 -- when there isn't one), and same-realm addon messages come from "First Last".
 local REALM = "Realm1"
-local function newClient(name, surname)
-	local client = { name = name, full = surname and (name .. " " .. surname) or name, ns = {}, popups = {}, tokens = {}, refill = now, frames = {}, textures = {} }
+local function newClient(name, surname, dir)
+	dir = dir or ADDON_DIR
+	local client = { name = name, full = surname and (name .. " " .. surname) or name, ns = {}, popups = {}, tokens = {},
+		refill = now, frames = {}, textures = {}, printed = {}, sent = {} }
 	local env = setmetatable({}, { __index = _G })
 	client.env = env
 	env.print = function(...)
@@ -110,7 +129,9 @@ local function newClient(name, surname)
 		for i = 1, select("#", ...) do
 			parts[i] = tostring(select(i, ...))
 		end
-		print(string.format("     [%s] %s", name, table.concat(parts, " "):gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")))
+		local line = table.concat(parts, " "):gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")
+		table.insert(client.printed, line)
+		print(string.format("     [%s] %s", name, line))
 	end
 	env.CreateFrame = function(_, frameName, parent)
 		local frame = makeWidget(parent, client)
@@ -147,7 +168,7 @@ local function newClient(name, surname)
 		RegisterAddOnCategory = function() end,
 		OpenToCategory = function() end,
 	}
-	env.C_AddOns = { GetAddOnMetadata = function() return "0.1.0" end }
+	env.C_AddOns = { GetAddOnMetadata = function() return "0.2.0" end }
 	env.C_Timer = {
 		After = function(delay, fn) schedule(delay, fn) end,
 		NewTicker = function(interval, fn) return schedule(interval, fn, interval) end,
@@ -185,6 +206,7 @@ local function newClient(name, surname)
 				return 3
 			end
 			client.tokens[prefix] = client.tokens[prefix] - 1
+			table.insert(client.sent, { text = text, chatType = chatType, target = target })
 			stats.sent = stats.sent + 1
 			stats.bytes = stats.bytes + #text
 			for _, other in ipairs(clients) do
@@ -197,8 +219,8 @@ local function newClient(name, surname)
 		end,
 	}
 
-	for _, file in ipairs(FILES) do
-		local chunk = assert(loadfile(ADDON_DIR .. "/" .. file))
+	for _, file in ipairs(tocFiles(dir)) do
+		local chunk = assert(loadfile(dir .. "/" .. file))
 		setfenv(chunk, env)
 		chunk("TurkeyTickleUI_Puzzle", client.ns)
 	end
@@ -271,12 +293,39 @@ local function sessionOf(client)
 	return session
 end
 
+local function printedSince(client, mark, text)
+	for i = mark + 1, #client.printed do
+		if client.printed[i]:find(text, 1, true) then
+			return true
+		end
+	end
+	return false
+end
+
+-- Messages a client sent since `mark` that start with `start` (and, if given, went to `target`).
+local function sentSince(client, mark, start, target)
+	local found = {}
+	for i = mark + 1, #client.sent do
+		local m = client.sent[i]
+		if m.text:sub(1, #start) == start and (not target or m.target == target) then
+			found[#found + 1] = m
+		end
+	end
+	return found
+end
+
+local function loadedFor(client, id)
+	local session = client.ns.sessions[id]
+	return session and session.decoder:IsComplete() and session
+end
+
 local function samePieces(a, b)
 	for i, piece in ipairs(a.pieces) do
 		local other = b.pieces[i]
-		if math.abs(piece.x - other.x) > 1e-9 or math.abs(piece.y - other.y) > 1e-9 or (piece.placed or false) ~= (other.placed or false) then
-			return false, string.format("piece %d: %.4f,%.4f %s vs %.4f,%.4f %s", i, piece.x, piece.y,
-				tostring(piece.placed), other.x, other.y, tostring(other.placed))
+		if math.abs(piece.x - other.x) > 1e-9 or math.abs(piece.y - other.y) > 1e-9 or (piece.placed or false) ~= (other.placed or false)
+			or (piece.turn or 0) ~= (other.turn or 0) then
+			return false, string.format("piece %d: %.4f,%.4f %s %d vs %.4f,%.4f %s %d", i, piece.x, piece.y,
+				tostring(piece.placed), piece.turn or 0, other.x, other.y, tostring(other.placed), other.turn or 0)
 		end
 	end
 	return true
@@ -330,9 +379,12 @@ login(alice)
 login(bob)
 run(6)
 
+local plainMark = #alice.sent
 local hostOk, hostErr = alice.ns:HostSession(sample, "Test Picture", 24, "GUILD")
 check(hostOk, "Alice hosts a puzzle " .. tostring(hostErr or ""))
 local hostSession = sessionOf(alice)
+check(hostSession.needs == 1 and #sentSince(alice, plainMark, "S:") == 1 and #sentSince(alice, plainMark, "A:") == 0,
+	"a puzzle without turned pieces is set up the way 0.1.0 understands")
 check(alice.ns.active == hostSession and alice.ns:IsBoardShown(), "host joins and sees the board")
 
 run(1)
@@ -513,6 +565,320 @@ check(hostSession.placedBy["Bob Jones"] == #hostSession.pieces - 1 and hostSessi
 alice.ns:EndSession()
 run(2)
 check(next(bob.ns.sessions) == nil and next(cara.ns.sessions) == nil, "ending the puzzle closes it for everyone")
+
+-- Turned pieces.
+local turnMark = #alice.sent
+check(alice.ns:HostSession(sample, "Turny", 24, "GUILD", false, true), "Alice hosts a puzzle with turned pieces")
+local turnHost = sessionOf(alice)
+local turnSetup = sentSince(alice, turnMark, "A:")[1]
+check(turnHost.needs == 2 and turnSetup and turnSetup.text:find(":2:0.2.0:0.2.0:", 1, true)
+	and #sentSince(alice, turnMark, "S:") == 0, "a puzzle with turned pieces says it needs 0.2.0, and which version the host has")
+run(400, function()
+	local s = sessionOf(bob)
+	return s and s.decoder:IsComplete()
+end)
+local turnBob = sessionOf(bob)
+bob.ns:JoinSession(turnBob)
+run(1)
+check(turnHost.rotate and turnBob.rotate, "everyone knows the pieces turn")
+local turnCounts = { [0] = 0, 0, 0, 0 }
+for _, piece in ipairs(turnHost.pieces) do
+	turnCounts[piece.turn] = turnCounts[piece.turn] + 1
+end
+check(turnCounts[0] < #turnHost.pieces and samePieces(turnHost, turnBob),
+	string.format("pieces start turned, the same way for everyone (%d/%d/%d/%d)", turnCounts[0], turnCounts[1], turnCounts[2], turnCounts[3]))
+
+local bns = bob.ns
+local fw, fh = bns:PieceSize(turnBob, 1, 0)
+local tw, th = bns:PieceSize(turnBob, 1, 1)
+local pw, ph = bns:PlaySize(turnBob)
+check(math.abs(tw * pw - fh * ph) < 1e-9 and math.abs(th * ph - fw * pw) < 1e-9, "a quarter turn swaps a piece's width and height")
+local x, y, t = 0.3, 0.3, 0
+for _ = 1, 4 do
+	x, y = bns:TurnedPosition(turnBob, 1, t, x, y, 0.35, 0.32)
+	t = (t + 1) % 4
+end
+check(math.abs(x - 0.3) < 1e-9 and math.abs(y - 0.3) < 1e-9, "four quarter turns about a point come back where they started")
+
+-- Turning a group about a point moves each member as if it turned alone about that point. Upright
+-- offsets come from home positions, which are rounded to the 1/4000 grid positions travel on.
+local ta, tb = 7, 8
+local groupOk = true
+for turn = 0, 3 do
+	local ax0, ay0 = 0.3, 0.4
+	local ox, oy = bns:GroupOffset(turnBob, ta, tb, turn)
+	local ax1, ay1 = bns:TurnedPosition(turnBob, ta, turn, ax0, ay0, 0.33, 0.37)
+	local bx1, by1 = bns:TurnedPosition(turnBob, tb, turn, ax0 + ox, ay0 + oy, 0.33, 0.37)
+	local nx, ny = bns:GroupOffset(turnBob, ta, tb, (turn + 1) % 4)
+	groupOk = groupOk and math.abs(bx1 - ax1 - nx) < 1 / 4000 and math.abs(by1 - ay1 - ny) < 1 / 4000
+end
+check(groupOk, "a group keeps its shape through every turn")
+
+local hx, hy = bns:HomePosition(turnBob, 2)
+check(not bns:IsNearHome(turnBob, 2, hx, hy, 1) and bns:IsNearHome(turnBob, 2, hx, hy, 0),
+	"only an upright piece drops into its spot")
+bns:MovePiece(turnBob, 3, 0.2, 0.2, "r", 3)
+run(1)
+check(turnHost.pieces[3].turn == 3 and math.abs(turnHost.pieces[3].x - 0.2) < 1e-3, "the host sees Bob turn a piece")
+bns:MovePiece(turnBob, 3, 0.2, 0.2, "r", 0)
+run(1)
+check(turnHost.pieces[3].turn == 0, "turning a piece upright reaches the host")
+
+-- Neighbors only snap when they're turned the same way.
+bns:MovePiece(turnBob, ta, 0.1, 0.1, "r", 2)
+local ox, oy = bns:GroupOffset(turnBob, tb, ta, 2)
+local nearX, nearY = 0.1 - ox + 0.002, 0.1 - oy
+check(not bns:FindSnap(turnBob, tb, nearX, nearY, 1), "neighbors turned different ways don't snap")
+local neighbor, sx, sy = bns:FindSnap(turnBob, tb, nearX, nearY, 2)
+check(neighbor == ta, "neighbors turned the same way snap")
+bns:MovePiece(turnBob, tb, sx, sy, "r", 2)
+bns:LinkPieces(turnBob, tb, ta)
+run(1)
+local hostA, hostB = turnHost.pieces[ta], turnHost.pieces[tb]
+local gx, gy = alice.ns:GroupOffset(turnHost, ta, tb, 2)
+check(hostA.turn == 2 and hostB.turn == 2 and math.abs(hostB.x - hostA.x - gx) < 1e-3 and math.abs(hostB.y - hostA.y - gy) < 1e-3,
+	"the host sees the turned pair snapped together")
+alice.ns:MovePiece(turnHost, ta, 0.3, 0.3, "r", 1)
+run(1)
+local bx, by = bns:GroupOffset(turnBob, ta, tb, 1)
+check(turnBob.pieces[tb].turn == 1 and math.abs(turnBob.pieces[tb].x - 0.3 - bx) < 1e-3, "turning one piece turns its whole group")
+
+local dan = newClient("Dan")
+login(dan)
+run(8)
+local turnDan = sessionOf(dan)
+run(400, function()
+	return turnDan and turnDan.decoder:IsComplete()
+end)
+dan.ns:JoinSession(turnDan)
+run(2)
+check(turnDan.rotate and samePieces(turnHost, turnDan), "Dan catches up on how every piece is turned")
+
+-- Eve's guild isn't known yet when she first asks who's hosting, so she asks again later.
+local eve = newClient("Eve")
+local eveInGuild = false
+eve.env.IsInGuild = function() return eveInGuild end
+login(eve)
+run(8)
+check(next(eve.ns.sessions) == nil, "Eve can't ask her guild before the game says she's in it")
+eveInGuild = true
+run(16)
+check(sessionOf(eve) ~= nil, "Eve asks again later and hears about the puzzle in progress")
+
+-- Finn never asked (as if the answer got lost), so he joins by hand.
+local finn = newClient("Finn")
+finn.online = true
+finn.fire("ADDON_LOADED", "TurkeyTickleUI_Puzzle")
+check(next(finn.ns.sessions) == nil, "Finn doesn't know about the puzzle yet")
+finn.ns:JoinSession(finn.ns:FindSession(""), "")
+run(400, function()
+	local s = finn.ns.active
+	return s and s.decoder:IsComplete()
+end)
+run(2)
+local turnFinn = finn.ns.active
+check(turnFinn ~= nil and finn.ns:IsBoardShown() and turnFinn.decoder:IsComplete(),
+	"/ttpz join finds the puzzle in progress, opens it and loads the picture")
+check(samePieces(turnHost, turnFinn), "Finn catches up on every piece")
+
+-- Versions. 0.1.0 asks who's hosting without saying its version, and can't play turned pieces.
+local mark, sentMark = #alice.printed, #alice.sent
+alice.fire("CHAT_MSG_ADDON", "TTPuzzle1", "H", "GUILD", "Olaf Old")
+run(1)
+check(printedSince(alice, mark, "Olaf Old can't join Turny: they have Turkey Tickle UI Puzzle 0.1.0, and this puzzle needs 0.2.0 or newer."),
+	"the host hears that a player on 0.1.0 can't join, and what they need")
+check(#sentSince(alice, sentMark, "", "Olaf Old") == 0, "the host doesn't send 0.1.0 a puzzle it can't read")
+mark = #alice.printed
+alice.fire("CHAT_MSG_ADDON", "TTPuzzle1", "V:" .. turnHost.id .. ":1:0.1.0", "WHISPER", "Olaf Old")
+run(12)
+alice.fire("CHAT_MSG_ADDON", "TTPuzzle1", "H", "GUILD", "Olaf Old")
+run(1)
+check(not printedSince(alice, mark, "Olaf"), "the host only hears about each player once")
+
+-- 0.1.0 joining mid-picture asks for it from the top; that only gets it the setup, which it ignores.
+sentMark = #alice.sent
+alice.fire("CHAT_MSG_ADDON", "TTPuzzle2", "Q:" .. turnHost.id .. ":0:1", "WHISPER", "Olaf Old")
+run(1)
+check(#sentSince(alice, sentMark, "A:", "Olaf Old") == 1 and #sentSince(alice, sentMark, "D:") == 0
+	and #sentSince(alice, sentMark, "P:") == 0, "an addon too old for the puzzle doesn't make the host resend the picture")
+
+-- A newer host's puzzle that needs a protocol we don't have.
+mark, sentMark = #bob.printed, #bob.sent
+local future = "A:zzzz:9:0.9.0:0.9.3:G:5:5:10:123:grx:Future: the sequel"
+bob.fire("CHAT_MSG_ADDON", "TTPuzzle2", future, "GUILD", "Zed Zeta")
+run(1)
+check(bob.ns.sessions.zzzz == nil and bob.ns.blocked.zzzz ~= nil, "a puzzle that needs a newer addon isn't opened")
+local blockedText = "Zed Zeta's puzzle Future: the sequel needs Turkey Tickle UI Puzzle 0.9.0 or newer. Zed Zeta has 0.9.3 and you have "
+	.. "0.2.0: update to join."
+check(printedSince(bob, mark, blockedText), "the player hears which version the host has, which they have, and what to update to")
+local told = sentSince(bob, sentMark, "V:zzzz:2:0.2.0", "Zed Zeta")
+check(#told == 1 and told[1].chatType == "WHISPER", "the host is told the player's version")
+mark = #bob.printed
+bob.fire("CHAT_MSG_ADDON", "TTPuzzle2", future, "WHISPER", "Zed Zeta")
+run(1)
+check(not printedSince(bob, mark, "Zed Zeta's puzzle"), "hearing about it again doesn't repeat the message")
+bob.ns:PrintStatus()
+check(printedSince(bob, mark, blockedText), "/ttpz status repeats it")
+mark = #bob.printed
+bob.ns:JoinSession(nil, "zed zeta")
+run(1)
+bob.fire("CHAT_MSG_ADDON", "TTPuzzle2", future, "WHISPER", "Zed Zeta")
+run(8)
+check(printedSince(bob, mark, blockedText) and not printedSince(bob, mark, "No puzzles found"),
+	"/ttpz join zed zeta explains why it can't join instead of finding nothing")
+bob.fire("CHAT_MSG_ADDON", "TTPuzzle2", "E:zzzz", "GUILD", "Zed Zeta")
+check(bob.ns.blocked.zzzz == nil, "the message goes away when the host ends that puzzle")
+mark = #bob.printed
+bob.fire("CHAT_MSG_ADDON", "TTPuzzle3", "M:" .. turnBob.id .. ":9:9999:400:400:r:1:newfield:more", "GUILD", "Zed Zeta")
+check(turnBob.pieces[9].seq == 9999 and turnBob.pieces[9].turn == 1, "fields a newer addon adds to the end of a message are ignored")
+
+for i, piece in ipairs(turnBob.pieces) do
+	if not piece.placed then
+		local px, py = bns:HomePosition(turnBob, i)
+		bns:MovePiece(turnBob, i, px, py, "p")
+	end
+end
+run(30, function()
+	return alice.ns:IsComplete(turnHost) and dan.ns:IsComplete(turnDan)
+end)
+local upright = true
+for _, piece in ipairs(turnHost.pieces) do
+	upright = upright and piece.turn == 0
+end
+check(alice.ns:IsComplete(turnHost) and upright, "placed pieces end up upright")
+
+alice.ns:ShowHost()
+local hostDialog = alice.env.TurkeyTickleUIPuzzleHost
+hostDialog.pasted = sample
+hostDialog.name:SetText("Again")
+hostDialog.start._scripts.OnClick()
+check(alice.ns.active ~= turnHost and alice.ns.active.title == "Again", "hosting from the host window starts the new puzzle")
+alice.ns:ShowHost()
+check(hostDialog.pasted == "" and hostDialog.name:GetText() == "",
+	"the host window forgets the last picture once it's started, so it can't be hosted again by accident")
+alice.ns:EndSession()
+run(2)
+
+-- Hosting for a party outside one asks first, then starts a puzzle just for the host.
+alice.ns.db.channel = "GROUP"
+alice.ns:ShowHost()
+hostDialog.pasted = sample
+hostDialog.name:SetText("Solo")
+hostDialog.start._scripts.OnClick()
+check(alice.popups[#alice.popups].which == "TURKEYTICKLEUI_PUZZLE_ALONE" and hostDialog:IsShown() and alice.ns.active == nil,
+	"hosting for a party outside one asks whether to puzzle alone")
+local soloMark = #alice.sent
+alice.env.StaticPopupDialogs.TURKEYTICKLEUI_PUZZLE_ALONE.OnAccept()
+local solo = alice.ns.active
+check(solo and solo.title == "Solo" and solo.channel == "P" and alice.ns:IsBoardShown() and not hostDialog:IsShown(),
+	"puzzling alone starts the puzzle and opens the board")
+run(5)
+local soloSent = 0
+for i = soloMark + 1, #alice.sent do
+	soloSent = soloSent + (alice.sent[i].text:find(solo.id, 1, true) and 1 or 0)
+end
+check(soloSent == 0, "a puzzle alone sends nothing")
+alice.env.IsInGroup = function() return true end
+bob.env.IsInGroup = function() return true end
+bob.fire("GROUP_JOINED")
+run(400, function()
+	return loadedFor(bob, solo.id)
+end)
+check(loadedFor(bob, solo.id), "someone who joins the party later hears about the puzzle and loads it")
+alice.ns:EndSession()
+alice.env.IsInGroup = function() return false end
+bob.env.IsInGroup = function() return false end
+alice.ns.db.channel = "GUILD"
+run(2)
+
+-- An older release in the same guild ----------------------------------------------
+
+if LEGACY_DIR then
+	for _, client in ipairs(clients) do
+		client.online = client == alice or client == bob
+	end
+	local olga = newClient("Olga", "Old", LEGACY_DIR)
+	local oldProtocol = olga.ns.PROTOCOL or 1
+	print(string.format("-- against %s (protocol %d)", LEGACY_DIR, oldProtocol))
+	login(olga)
+	run(8)
+
+	-- A puzzle everyone can play, from a new host.
+	check(alice.ns:HostSession(sample, "Shared", 24, "GUILD"), "Alice hosts a puzzle without turned pieces")
+	local shared = alice.ns.active
+	run(400, function()
+		return loadedFor(olga, shared.id) and loadedFor(bob, shared.id)
+	end)
+	local oldShared, bobShared = loadedFor(olga, shared.id), loadedFor(bob, shared.id)
+	check(oldShared and bobShared, "the older addon loads a new host's puzzle")
+	olga.ns:JoinSession(oldShared)
+	bob.ns:JoinSession(bobShared)
+	run(1)
+	check(samePieces(shared, oldShared), "the older addon starts with the same pieces")
+	olga.ns:MovePiece(oldShared, 1, 0.1, 0.2, "r")
+	local hx, hy = alice.ns:HomePosition(shared, 2)
+	alice.ns:MovePiece(shared, 2, hx, hy, "p")
+	run(1)
+	check(math.abs(shared.pieces[1].x - 0.1) < 1e-3 and math.abs(bobShared.pieces[1].x - 0.1) < 1e-3,
+		"new addons see the older addon's moves")
+	check(oldShared.pieces[2].placed, "the older addon sees the host place a piece")
+
+	local oscar = newClient("Oscar", "Old", LEGACY_DIR)
+	login(oscar)
+	run(400, function()
+		return loadedFor(oscar, shared.id)
+	end)
+	run(2)
+	local oscarShared = loadedFor(oscar, shared.id)
+	check(oscarShared and samePieces(shared, oscarShared), "an older addon logging in late catches up from a new host")
+	oscar.online = false
+	alice.ns:EndSession()
+	run(2)
+	check(olga.ns.sessions[shared.id] == nil, "the older addon sees the new host end the puzzle")
+
+	-- A puzzle hosted by the older addon.
+	check(olga.ns:HostSession(sample, "Old host", 24, "GUILD"), "the older addon hosts a puzzle")
+	local oldHosted = olga.ns.active
+	run(400, function()
+		return loadedFor(bob, oldHosted.id)
+	end)
+	local bobOld = loadedFor(bob, oldHosted.id)
+	check(bobOld and not bobOld.rotate, "a new addon loads the older addon's puzzle")
+	bob.ns:JoinSession(bobOld)
+	run(1)
+	bob.ns:MovePiece(bobOld, 3, 0.3, 0.3, "r")
+	hx, hy = bob.ns:HomePosition(bobOld, 4)
+	bob.ns:MovePiece(bobOld, 4, hx, hy, "p")
+	olga.ns:MovePiece(oldHosted, 5, 0.6, 0.1, "r")
+	run(1)
+	check(samePieces(oldHosted, bobOld) and oldHosted.pieces[4].placed, "moves go both ways with an older host")
+	olga.ns:EndSession()
+	run(2)
+
+	-- Turned pieces need protocol 2.
+	local sentMark, mark = #alice.sent, #alice.printed
+	check(alice.ns:HostSession(sample, "Turny again", 24, "GUILD", false, true), "Alice hosts a puzzle with turned pieces")
+	local turny = alice.ns.active
+	run(400, function()
+		return loadedFor(bob, turny.id) and (oldProtocol < 2 or loadedFor(olga, turny.id))
+	end)
+	if oldProtocol >= 2 then
+		local oldTurny = loadedFor(olga, turny.id)
+		olga.ns:JoinSession(oldTurny)
+		run(2)
+		check(oldTurny and oldTurny.rotate and samePieces(turny, oldTurny), "the older addon plays turned pieces")
+	else
+		check(olga.ns.sessions[turny.id] == nil, "the older addon doesn't open a puzzle it can't play")
+		check(#sentSince(olga, 0, "Q:" .. turny.id) > 0 and #sentSince(alice, sentMark, "D:" .. turny.id) == turny.chunkCount,
+			"the picture goes out once, even when an older addon that heard part of it asks for the rest")
+		olga.ns:Send("H", "GUILD")
+		run(1)
+		check(printedSince(alice, mark, "Olga Old can't join Turny again: they have Turkey Tickle UI Puzzle 0.1.0"),
+			"the host hears that the older addon can't join")
+	end
+	alice.ns:EndSession()
+	run(2)
+end
 
 check(#errors == 0, "no Lua errors")
 print("done")

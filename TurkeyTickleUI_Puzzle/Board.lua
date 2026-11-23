@@ -14,8 +14,9 @@ local MEDIA = "Interface\\AddOns\\" .. ADDON .. "\\Media\\"
 local MASK_SCALE = 64 / 60 -- mask texture size over its circle's diameter
 local ZOOM_STEP = 1.15 -- per mouse wheel notch
 local MAX_ZOOM = 4
-local MIN_WIDTH, MIN_HEIGHT = 700, 420 -- narrower and the checkbox runs into the buttons
-
+local MIN_WIDTH, MIN_HEIGHT = 320, 240
+local COMPACT_WIDTH = 640 -- narrower and the buttons and status line switch to short labels
+local TURN_HINT_WIDTH = 480 -- narrower and the turn hint runs into the status line
 local window, viewport, canvas
 local pieceFrames = {}
 local drag
@@ -65,11 +66,61 @@ local function hideUnused(owner, key, used)
 	end
 end
 
-local function place(tex, x, y, width, height, scale)
+local function place(tex, x, y, width, height)
 	tex:ClearAllPoints()
-	tex:SetPoint("TOPLEFT", x * scale, -y * scale)
-	tex:SetSize(width * scale, height * scale)
+	tex:SetPoint("TOPLEFT", x, -y)
+	tex:SetSize(width, height)
 	tex:Show()
+end
+
+-- Turning -------------------------------------------------------------------------
+-- WoW can't rotate frames, but a piece is only axis-aligned rectangles and circles, so a quarter
+-- turn moves each one to where it lands. Points are in board units from the frame's top left;
+-- bw, bh is the frame's size upright. Owners without a turn (the ghost) are drawn as they are.
+
+local function turnPoint(owner, x, y)
+	local turn = owner.turn
+	if turn == 1 then
+		return owner.bh - y, x
+	elseif turn == 2 then
+		return owner.bw - x, owner.bh - y
+	elseif turn == 3 then
+		return y, owner.bw - x
+	end
+	return x, y
+end
+
+local function unturnPoint(owner, x, y)
+	local turn = owner.turn
+	if turn == 1 then
+		return y, owner.bh - x
+	elseif turn == 2 then
+		return owner.bw - x, owner.bh - y
+	elseif turn == 3 then
+		return owner.bw - y, x
+	end
+	return x, y
+end
+
+-- place() for a rectangle given upright, already in board units.
+local function placeTurned(owner, tex, x, y, width, height)
+	local x0, y0 = turnPoint(owner, x, y)
+	local x1, y1 = turnPoint(owner, x + width, y + height)
+	place(tex, math.min(x0, x1), math.min(y0, y1), math.abs(x1 - x0), math.abs(y1 - y0))
+end
+
+-- A horizontal gradient, turned. Vertical gradients run from minColor at the bottom to maxColor at the top.
+local function setTurnedGradient(owner, tex, left, right)
+	local turn = owner.turn
+	if turn == 1 then
+		tex:SetGradient("VERTICAL", right, left)
+	elseif turn == 2 then
+		tex:SetGradient("HORIZONTAL", right, left)
+	elseif turn == 3 then
+		tex:SetGradient("VERTICAL", left, right)
+	else
+		tex:SetGradient("HORIZONTAL", left, right)
+	end
 end
 
 -- Strips --------------------------------------------------------------------------
@@ -87,6 +138,20 @@ local TOLERANCES = { 0, 0.03, 0.06, 0.1, 0.14, 0.2 }
 
 local function clamp(value, low, high)
 	return value < low and low or value > high and high or value
+end
+
+local abs, max, min = math.abs, math.max, math.min
+
+-- Searching for the best cut takes far longer than WoW lets one script run on a detailed picture,
+-- so searches run as coroutines, SEARCH_MS a frame, and pause() yields once the slice is used up.
+local SEARCH_MS = 6
+local clock = debugprofilestop or function() return 0 end
+local sliceStart
+
+local function pause()
+	if sliceStart and clock() - sliceStart > SEARCH_MS then
+		coroutine.yield()
+	end
 end
 
 -- WoW gives a texture at most this many masks.
@@ -155,7 +220,9 @@ local function cutStrips(session, step, tolerance, budget, regions)
 	local w, pixels, palette = d.w, d.pixels, d.palette
 	local groups, count = {}, 0
 	local above, row = {}, {}
-	step = math.max(step, ns.LEVEL_STEPS[d.level])
+	-- Only every level step'th pixel has arrived, so blocks have to line up with those.
+	local levelStep = ns.LEVEL_STEPS[d.level]
+	step = math.ceil(step / levelStep) * levelStep
 	for _, region in ipairs(regions) do
 		local list = groups[region.group]
 		if not list then
@@ -174,9 +241,9 @@ local function cutStrips(session, step, tolerance, budget, regions)
 				while x1 < region.x1 and x1 - x < MAX_STRIP do
 					local c = palette[pixels[base + x1 - x1 % step]]
 					local dist = x1 - x
-					local nlR, nhR = math.max(lowR, (c[1] - tolerance - r) / dist), math.min(highR, (c[1] + tolerance - r) / dist)
-					local nlG, nhG = math.max(lowG, (c[2] - tolerance - g) / dist), math.min(highG, (c[2] + tolerance - g) / dist)
-					local nlB, nhB = math.max(lowB, (c[3] - tolerance - b) / dist), math.min(highB, (c[3] + tolerance - b) / dist)
+					local nlR, nhR = max(lowR, (c[1] - tolerance - r) / dist), min(highR, (c[1] + tolerance - r) / dist)
+					local nlG, nhG = max(lowG, (c[2] - tolerance - g) / dist), min(highG, (c[2] + tolerance - g) / dist)
+					local nlB, nhB = max(lowB, (c[3] - tolerance - b) / dist), min(highB, (c[3] + tolerance - b) / dist)
 					if nlR > nhR or nlG > nhG or nlB > nhB then
 						break
 					end
@@ -191,9 +258,10 @@ local function cutStrips(session, step, tolerance, budget, regions)
 					dg = clamp((last[2] - g) / span, lowG, highG)
 					db = clamp((last[3] - b) / span, lowB, highB)
 				end
-				local key = format("%d:%d:%.3f:%.3f:%.3f:%.4f:%.4f:%.4f", x, x1, r, g, b, dr, dg, db)
-				local strip = above[key]
-				if strip then
+				local strip = above[x]
+				if strip and strip[3] == x1 and abs(strip[5] - r) < 5e-4 and abs(strip[6] - g) < 5e-4
+					and abs(strip[7] - b) < 5e-4 and abs(strip[8] - dr) < 5e-5 and abs(strip[9] - dg) < 5e-5
+					and abs(strip[10] - db) < 5e-5 then
 					strip[4] = y + 1
 				else
 					count = count + 1
@@ -203,11 +271,12 @@ local function cutStrips(session, step, tolerance, budget, regions)
 					strip = { x, y, x1, y + 1, r, g, b, dr, dg, db, region }
 					list[#list + 1] = strip
 				end
-				row[key] = strip
+				row[x] = strip
 				x = x1
 			end
 			above, row = row, above
 			wipe(row)
+			pause()
 		end
 	end
 	return groups, count
@@ -226,20 +295,16 @@ local function cutError(session, groups)
 				local base = (y - y % level) * w
 				for x = x0, x1 - 1 do
 					local c, t = palette[pixels[base + x - x % level]], x - x0
-					total = total + math.abs(r + dr * t - c[1]) + math.abs(g + dg * t - c[2]) + math.abs(b + db * t - c[3])
+					total = total + abs(r + dr * t - c[1]) + abs(g + dg * t - c[2]) + abs(b + db * t - c[3])
 				end
 			end
+			pause()
 		end
 	end
 	return total
 end
 
-local function chooseCut(session, budget, ghost)
-	local key = format("%s:%d:%d", ghost and "ghost" or "pieces", session.decoder.level, budget)
-	session.cuts = session.cuts or {}
-	if session.cuts[key] then
-		return session.cuts[key]
-	end
+local function searchCut(session, budget, ghost)
 	local regions = stripRegions(session, ghost)
 	local best, bestError, worse = nil, math.huge, 0
 	for _, step in ipairs(STEPS) do
@@ -259,9 +324,72 @@ local function chooseCut(session, budget, ghost)
 			break
 		end
 	end
-	best = best or cutStrips(session, 32, 1, math.huge, regions)
-	session.cuts[key] = best
-	return best
+	return best or cutStrips(session, 32, 1, math.huge, regions)
+end
+
+local searches = {} -- running searches by cut key; at most one per kind of cut
+local onCutFound
+
+-- Runs a slice of a search. Returns true once it has finished.
+local function advance(search)
+	sliceStart = clock()
+	local ok, err = coroutine.resume(search.thread)
+	sliceStart = nil
+	if not ok then
+		searches[search.key] = nil
+		error(err, 0)
+	end
+	if coroutine.status(search.thread) ~= "dead" then
+		return false
+	end
+	searches[search.key] = nil
+	search.session.cuts[search.key] = search.cut
+	search.session.lastCut[search.kind] = search.cut
+	return true
+end
+
+-- The best cut for the picture as it stands, if one has been found. Otherwise starts looking and
+-- returns a stand-in: the last cut found of this kind, or a coarse one.
+local function chooseCut(session, budget, ghost)
+	local kind = ghost and "ghost" or "pieces"
+	local key = format("%s:%s:%d:%d", session.id, kind, session.decoder.level, budget)
+	session.cuts = session.cuts or {}
+	session.lastCut = session.lastCut or {}
+	if session.cuts[key] then
+		return session.cuts[key]
+	end
+	for other, search in pairs(searches) do
+		if search.kind == kind and other ~= key then
+			searches[other] = nil
+		end
+	end
+	local search = searches[key]
+	if not search then
+		search = { key = key, kind = kind, session = session }
+		search.thread = coroutine.create(function()
+			search.cut = searchCut(session, budget, ghost)
+		end)
+		searches[key] = search
+		if advance(search) then
+			return search.cut
+		end
+	end
+	if not session.lastCut[kind] then
+		session.lastCut[kind] = cutStrips(session, 32, 1, math.huge, stripRegions(session, ghost))
+	end
+	return session.lastCut[kind]
+end
+
+-- Called every frame: works on the searches, and redraws the board when one finishes.
+local function searchSome()
+	for key, search in pairs(searches) do
+		if search.session ~= ns.active then
+			searches[key] = nil
+		elseif advance(search) then
+			onCutFound(search.session)
+		end
+		return
+	end
 end
 
 -- Masks -----------------------------------------------------------------------------
@@ -283,9 +411,10 @@ local function pooledMask(frame, key, k, file, wrap)
 	return mask
 end
 
--- (x, y) is the circle's center in board units from the frame's top left corner.
+-- (x, y) is the circle's center in board units from the upright frame's top left corner.
 local function placeCircle(mask, frame, x, y, radius)
 	local size = math.max(radius, 0.5) * 2 * MASK_SCALE
+	x, y = turnPoint(frame, x, y)
 	mask:ClearAllPoints()
 	mask:SetPoint("CENTER", frame, "TOPLEFT", x, -y)
 	mask:SetSize(size, size)
@@ -323,8 +452,8 @@ local function drawStrips(owner, strips, originX, originY, scale)
 		tex:SetColorTexture(1, 1, 1)
 		leftColor:SetRGB(clamp(r - dr / 2, 0, 1), clamp(g - dg / 2, 0, 1), clamp(b - db / 2, 0, 1))
 		rightColor:SetRGB(clamp(r + dr * far, 0, 1), clamp(g + dg * far, 0, 1), clamp(b + db * far, 0, 1))
-		tex:SetGradient("HORIZONTAL", leftColor, rightColor)
-		place(tex, x0 - originX, y0 - originY, x1 - x0, y1 - y0, scale)
+		setTurnedGradient(owner, tex, leftColor, rightColor)
+		placeTurned(owner, tex, (x0 - originX) * scale, (y0 - originY) * scale, (x1 - x0) * scale, (y1 - y0) * scale)
 		wipe(stripMasks)
 		if shape and region.knob then
 			stripMasks[1] = owner.knobMasks[region.knob]
@@ -359,7 +488,8 @@ local function drawShape(frame, shape, scale)
 		end
 		used = used + 1
 		local body = pooled(frame, "outline", used, "BACKGROUND")
-		place(body, part.x0 - ox, part.y0 - oy, part.x1 - part.x0, part.y1 - part.y0, scale)
+		placeTurned(frame, body, (part.x0 - ox) * scale, (part.y0 - oy) * scale, (part.x1 - part.x0) * scale,
+			(part.y1 - part.y0) * scale)
 		setMasks(body, masks)
 	end
 	-- The band outside the cell. Where a hole crosses an edge, a wider circle around it cuts the
@@ -386,7 +516,7 @@ local function drawShape(frame, shape, scale)
 		end
 		used = used + 1
 		local tex = pooled(frame, "outline", used, "BACKGROUND")
-		place(tex, band[1], band[2], band[3] - band[1], band[4] - band[2], 1)
+		placeTurned(frame, tex, band[1], band[2], band[3] - band[1], band[4] - band[2])
 		setMasks(tex, masks)
 	end
 	for k, knob in ipairs(shape.knobs) do
@@ -402,7 +532,7 @@ local function drawShape(frame, shape, scale)
 		if knob.dy > 0 then y0 = edgeY + EDGE_WIDTH elseif knob.dy < 0 then y1 = edgeY - EDGE_WIDTH end
 		used = used + 1
 		local tex = pooled(frame, "outline", used, "BACKGROUND")
-		place(tex, x0, y0, x1 - x0, y1 - y0, 1)
+		placeTurned(frame, tex, x0, y0, x1 - x0, y1 - y0)
 		setMasks(tex, { edgeMask })
 	end
 	hideUnused(frame, "outline", used)
@@ -516,6 +646,21 @@ local function placeFrame(frame, fx, fy)
 	frame:SetPoint("TOPLEFT", canvas, "TOPLEFT", fx * boardW, -fy * boardH)
 end
 
+-- Sizes a piece frame for its turn and redraws what's on it.
+local function turnFrame(frame, turn)
+	frame.turn = turn
+	local w, h = frame.bw, frame.bh
+	if turn % 2 == 1 then
+		w, h = h, w
+	end
+	frame:SetSize(w, h)
+	frame.fw, frame.fh = w / boardW, h / boardH
+	drawShape(frame, frame.shape, pixelScale)
+	if frame.strips then
+		drawStrips(frame, frame.strips, frame.x0, frame.y0, pixelScale)
+	end
+end
+
 -- Piece frames are rectangles, but a click only counts inside a piece's shape.
 local function pieceAtCursor(session)
 	local cx, cy = cursorPosition()
@@ -523,9 +668,8 @@ local function pieceAtCursor(session)
 	for i, frame in ipairs(pieceFrames) do
 		local piece = session.pieces[i]
 		if frame:IsShown() and piece and not piece.placed then
-			local x = frame.x0 + (cx - frame.fx) * boardW / pixelScale
-			local y = frame.y0 + (cy - frame.fy) * boardH / pixelScale
-			if ns:PieceContains(session, i, x, y)
+			local lx, ly = unturnPoint(frame, (cx - frame.fx) * boardW, (cy - frame.fy) * boardH)
+			if ns:PieceContains(session, i, frame.x0 + lx / pixelScale, frame.y0 + ly / pixelScale)
 				and (not best or frame:GetFrameLevel() > best:GetFrameLevel()) then
 				best = frame
 			end
@@ -536,25 +680,31 @@ end
 
 -- Dragging one piece drags its whole group. Members sit at fixed offsets from the dragged piece,
 -- and the group's bounding box stays on the board.
+local function arrangeDrag(turn)
+	local session, index = drag.session, drag.frame.index
+	drag.turn, drag.members, drag.inGroup = turn, {}, {}
+	drag.x0, drag.y0, drag.x1, drag.y1 = 0, 0, 1, 1
+	for _, j in ipairs(ns:GroupMembers(session, index)) do
+		local ox, oy = ns:GroupOffset(session, index, j, turn)
+		local fw, fh = ns:PieceSize(session, j, turn)
+		drag.members[#drag.members + 1] = { frame = pieceFrames[j], ox = ox, oy = oy }
+		drag.inGroup[j] = true
+		drag.x0, drag.y0 = math.max(drag.x0, -ox), math.max(drag.y0, -oy)
+		drag.x1, drag.y1 = math.min(drag.x1, 1 - ox - fw), math.min(drag.y1, 1 - oy - fh)
+	end
+end
+
 local function beginDrag(frame)
 	local session = ns.active
 	local piece = session and session.pieces[frame.index]
 	if not piece or piece.placed or ns:IsHeldByOther(piece) then
 		return
 	end
-	local hx, hy = ns:HomePosition(session, frame.index)
 	local cx, cy = cursorPosition()
-	drag = { session = session, frame = frame, dx = cx - piece.x, dy = cy - piece.y, sentAt = GetTime(),
-		members = {}, inGroup = {}, x0 = 0, y0 = 0, x1 = 1, y1 = 1 }
-	for _, j in ipairs(ns:GroupMembers(session, frame.index)) do
-		local member = pieceFrames[j]
-		local jx, jy = ns:HomePosition(session, j)
-		local ox, oy = jx - hx, jy - hy
-		drag.members[#drag.members + 1] = { frame = member, ox = ox, oy = oy }
-		drag.inGroup[j] = true
-		drag.x0, drag.y0 = math.max(drag.x0, -ox), math.max(drag.y0, -oy)
-		drag.x1, drag.y1 = math.min(drag.x1, 1 - ox - member.fw), math.min(drag.y1, 1 - oy - member.fh)
-		member:SetFrameLevel(nextLevel())
+	drag = { session = session, frame = frame, dx = cx - piece.x, dy = cy - piece.y, sentAt = GetTime() }
+	arrangeDrag(piece.turn)
+	for _, member in ipairs(drag.members) do
+		member.frame:SetFrameLevel(nextLevel())
 	end
 	ns:MovePiece(session, frame.index, piece.x, piece.y, "d")
 end
@@ -570,29 +720,52 @@ local function placeDragged(fx, fy)
 	end
 end
 
+-- Turns the held group about the cursor, clockwise or not.
+local function turnDragged(clockwise)
+	local session, index = drag.session, drag.frame.index
+	local cx, cy = cursorPosition()
+	local fx, fy = dragTarget()
+	local turn = drag.turn
+	for _ = 1, clockwise and 1 or 3 do
+		fx, fy = ns:TurnedPosition(session, index, turn, fx, fy, cx, cy)
+		turn = (turn + 1) % 4
+	end
+	arrangeDrag(turn)
+	drag.dx, drag.dy = cx - fx, cy - fy
+	fx, fy = dragTarget()
+	-- Scrolling turns far faster than messages can go out; the drag's regular update sends the latest turn.
+	local quiet = GetTime() - drag.sentAt < SEND_INTERVAL
+	if not quiet then
+		drag.sentAt = GetTime()
+	end
+	ns:MovePiece(session, index, fx, fy, "d", turn, quiet)
+	placeDragged(fx, fy)
+end
+
 local function endDrag()
 	if not drag then
 		return
 	end
 	local session, index = drag.session, drag.frame.index
 	local fx, fy = dragTarget()
+	local turn = drag.turn
 	local x0, y0, x1, y1 = drag.x0, drag.y0, drag.x1, drag.y1
 	drag = nil
 	if ns.active ~= session then
 		return
 	end
-	if ns:IsNearHome(session, index, fx, fy) then
+	if ns:IsNearHome(session, index, fx, fy, turn) then
 		ns:MovePiece(session, index, fx, fy, "p")
 		ns:PlaySound("IG_ABILITY_ICON_DROP")
 		return
 	end
-	local neighbor, sx, sy = ns:FindSnap(session, index, fx, fy)
+	local neighbor, sx, sy = ns:FindSnap(session, index, fx, fy, turn)
 	if neighbor and sx >= x0 and sx <= x1 and sy >= y0 and sy <= y1 then
-		ns:MovePiece(session, index, sx, sy, "r")
+		ns:MovePiece(session, index, sx, sy, "r", turn)
 		ns:LinkPieces(session, index, neighbor)
 		ns:PlaySound("IG_ABILITY_ICON_DROP")
 	else
-		ns:MovePiece(session, index, fx, fy, "r")
+		ns:MovePiece(session, index, fx, fy, "r", turn)
 	end
 end
 
@@ -660,16 +833,21 @@ local function updateStatus()
 	for _ in pairs(session.players) do
 		players = players + 1
 	end
-	local text = format("Placed |cffffffff%d / %d|r     Puzzlers |cffffffff%d|r     Host |cffffffff%s|r",
-		session.placedCount, total, players, ns:ShortName(session.master))
+	local text
+	if window.compact then
+		text = format("Placed |cffffffff%d/%d|r   Puzzlers |cffffffff%d|r", session.placedCount, total, players)
+	else
+		text = format("Placed |cffffffff%d / %d|r     Puzzlers |cffffffff%d|r     Host |cffffffff%s|r",
+			session.placedCount, total, players, ns:ShortName(session.master))
+	end
 	if not decoder:IsComplete() then
-		text = text .. format("     Picture |cffffffff%d%%|r", math.floor(decoder:Progress() * 100))
+		text = text .. format(window.compact and "   Picture |cffffffff%d%%|r" or "     Picture |cffffffff%d%%|r",
+			math.floor(decoder:Progress() * 100))
 	end
 	window.status:SetText(text)
 	window.loading:SetShown(decoder.level == 0)
 	window.loading:SetFormattedText("Receiving the picture from %s...  %d%%", ns:ShortName(session.master),
 		math.floor(decoder:Progress() * 100))
-	window.endButton:SetShown(session.isMaster)
 	local complete = ns:IsComplete(session)
 	window.banner:SetShown(complete)
 	if complete then
@@ -716,13 +894,14 @@ local function layout()
 		frame.index = i
 		local x0, y0, x1, y1 = ns:PieceRect(session, i)
 		frame.x0, frame.y0, frame.x1, frame.y1 = x0, y0, x1, y1
-		frame.fw, frame.fh = (x1 - x0) / pw, (y1 - y0) / ph
-		frame:SetSize((x1 - x0) * pixelScale, (y1 - y0) * pixelScale)
+		frame.bw, frame.bh = (x1 - x0) * pixelScale, (y1 - y0) * pixelScale
 		if frame.session ~= session then
 			frame.shape = ns:PieceShape(session, i)
 			clearRegion(frame)
-			drawShape(frame, frame.shape, pixelScale)
-			frame.session = session
+			frame.session, frame.turn, frame.strips = session, nil, nil
+		end
+		if frame.turn ~= piece.turn then
+			turnFrame(frame, piece.turn)
 		end
 		placeFrame(frame, piece.x, piece.y)
 		if not piece.placed then
@@ -735,19 +914,27 @@ local function layout()
 	for i = 1, #session.pieces do
 		budget = budget - pieceFrames[i].textureCount
 	end
+	-- The ghost's whole allowance is set aside, so the pieces' cut doesn't wait on the ghost's.
 	if session.ghost then
 		local strips = chooseCut(session, GHOST_TEXTURES, true)
 		tinsert(renderQueue, { owner = window.ghost, strips = strips[1] or {}, x0 = 0, y0 = 0 })
-		budget = budget - #(strips[1] or {})
+		budget = budget - GHOST_TEXTURES
 	end
 	local groups = chooseCut(session, budget)
 	for i, frame in ipairs(pieceFrames) do
 		if i <= #session.pieces then
-			tinsert(renderQueue, { owner = frame, strips = groups[i] or {}, x0 = frame.x0, y0 = frame.y0 })
+			frame.strips = groups[i] or {}
+			tinsert(renderQueue, { owner = frame, strips = frame.strips, x0 = frame.x0, y0 = frame.y0 })
 		end
 	end
 	renderSome()
 	updateStatus()
+end
+
+function onCutFound(session)
+	if session == ns.active and ns:IsBoardShown() then
+		layout()
+	end
 end
 
 local function onUpdate(_, elapsed)
@@ -755,6 +942,7 @@ local function onUpdate(_, elapsed)
 	if not session or not session.pieces then
 		return
 	end
+	searchSome()
 	if #renderQueue > 0 then
 		renderSome()
 	end
@@ -784,12 +972,56 @@ end
 
 -- Window --------------------------------------------------------------------------
 
-local function createButton(parent, label, width, onClick)
+-- Header buttons have a short label and width for narrow windows.
+local function createButton(parent, label, width, short, shortWidth, onClick)
 	local button = CreateFrame("Button", nil, parent, "UIPanelButtonTemplate")
 	button:SetSize(width, 22)
 	button:SetText(label)
 	button:SetScript("OnClick", onClick)
+	button.labels, button.widths = { label, short }, { width, shortWidth }
 	return button
+end
+
+-- Lays the header and footer out for the window's width.
+local function fitControls()
+	local session = ns.active
+	if not session then
+		return
+	end
+	local width = window:GetWidth()
+	window.compact = width < COMPACT_WIDTH
+	local form = window.compact and 2 or 1
+	window.endButton:SetShown(session.isMaster)
+	local used = 0
+	for _, button in ipairs(window.headerButtons) do
+		button:SetText(button.labels[form])
+		button:SetWidth(button.widths[form])
+		if button:IsShown() then
+			used = used + button.widths[form] + 4
+		end
+	end
+
+	local toggle = window.ghostToggle
+	local label = toggle.label
+	label:SetFontObject(session.isMaster and "GameFontHighlightSmall" or "GameFontDisableSmall")
+	if window.compact then
+		label:SetText("Picture under pieces")
+	else
+		label:SetText(session.isMaster and "Show the picture under the pieces"
+			or "Show the picture under the pieces (the host decides)")
+	end
+	-- Whatever's left between the portrait and the buttons; the label is cut short to fit.
+	local room = width - 60 - toggle:GetWidth() - 2 - 16 - used - 8
+	label:SetWidth(math.max(1, room))
+	label:SetShown(room >= 40)
+
+	window.status:SetWidth(width - 18 - 24)
+	window.turnHint:SetShown(session.rotate and width >= TURN_HINT_WIDTH)
+	local bannerWidth = math.min(420, width - 40)
+	window.banner:SetWidth(bannerWidth)
+	window.banner.text:SetWidth(bannerWidth - 30)
+	window.loading:SetWidth(width - 60)
+	updateStatus()
 end
 
 local function createSizeGrip()
@@ -844,29 +1076,41 @@ local function createWindow()
 		window:GetPortrait():SetTexture("Interface\\Icons\\INV_Misc_Note_02")
 	end
 
-	window.endButton = createButton(window, "End puzzle", 100, function()
+	window.endButton = createButton(window, "End puzzle", 100, "End", 50, function()
 		ns:EndSession()
 	end)
 	window.endButton:SetPoint("TOPRIGHT", -16, -32)
-	local leave = createButton(window, "Leave", 80, function()
+	local leave = createButton(window, "Leave", 80, "Leave", 60, function()
 		ns:LeaveSession()
 	end)
 	leave:SetPoint("RIGHT", window.endButton, "LEFT", -4, 0)
-	local host = createButton(window, "Host new", 90, function()
+	local host = createButton(window, "Host new", 90, "New", 50, function()
 		ns:ShowHost()
 	end)
 	host:SetPoint("RIGHT", leave, "LEFT", -4, 0)
+	window.headerButtons = { window.endButton, leave, host }
 
 	local ghost = CreateFrame("CheckButton", nil, window, "UICheckButtonTemplate")
 	ghost:SetSize(24, 24)
 	ghost:SetPoint("TOPLEFT", 60, -31)
 	ghost.label = ghost:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
 	ghost.label:SetPoint("LEFT", ghost, "RIGHT", 2, 1)
+	ghost.label:SetJustifyH("LEFT")
+	ghost.label:SetWordWrap(false)
 	ghost:SetScript("OnClick", function(self)
 		if ns.active then
 			ns:SetGhost(ns.active, self:GetChecked() and true or false)
 		end
 	end)
+	ghost:SetScript("OnEnter", function(self)
+		GameTooltip:SetOwner(self, "ANCHOR_BOTTOMRIGHT")
+		GameTooltip:SetText("Show the picture under the pieces")
+		if ns.active and not ns.active.isMaster then
+			GameTooltip:AddLine("The host decides.", 1, 1, 1)
+		end
+		GameTooltip:Show()
+	end)
+	ghost:SetScript("OnLeave", GameTooltip_Hide)
 	window.ghostToggle = ghost
 
 	local inset = CreateFrame("Frame", nil, window, "InsetFrameTemplate")
@@ -887,7 +1131,11 @@ local function createWindow()
 	viewport:EnableMouse(true)
 	viewport:EnableMouseWheel(true)
 	viewport:SetScript("OnMouseWheel", function(_, delta)
-		zoomAt(delta)
+		if drag and drag.session.rotate then
+			turnDragged(delta < 0)
+		else
+			zoomAt(delta)
+		end
 	end)
 	viewport:SetScript("OnMouseDown", function(_, button)
 		if button == "RightButton" then
@@ -925,6 +1173,11 @@ local function createWindow()
 
 	window.status = window:CreateFontString(nil, "ARTWORK", "GameFontNormal")
 	window.status:SetPoint("BOTTOMLEFT", 18, 13)
+	window.status:SetJustifyH("LEFT")
+	window.status:SetWordWrap(false)
+	window.turnHint = window:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
+	window.turnHint:SetPoint("BOTTOMRIGHT", -26, 14)
+	window.turnHint:SetText("Turn pieces: scroll while dragging")
 
 	local banner = CreateFrame("Frame", nil, viewport, "BackdropTemplate")
 	banner:SetSize(420, 110)
@@ -952,6 +1205,7 @@ local function createWindow()
 			endDrag()
 		end
 	end)
+	window:SetScript("OnSizeChanged", fitControls)
 end
 
 function ns:ShowBoard()
@@ -989,9 +1243,7 @@ function ns:RefreshBoard()
 	local toggle = window.ghostToggle
 	toggle:SetChecked(session.ghost)
 	toggle:SetEnabled(session.isMaster)
-	toggle.label:SetFontObject(session.isMaster and "GameFontHighlightSmall" or "GameFontDisableSmall")
-	toggle.label:SetText(session.isMaster and "Show the picture under the pieces"
-		or "Show the picture under the pieces (the host decides)")
+	fitControls()
 	layout()
 end
 
@@ -1017,6 +1269,9 @@ function ns:OnPieceChanged(session, i, fromRemote)
 	local piece = session.pieces[i]
 	if not frame or not frame:IsShown() then
 		return
+	end
+	if frame.turn ~= piece.turn then
+		turnFrame(frame, piece.turn)
 	end
 	if fromRemote and not piece.placed then
 		frame:SetFrameLevel(nextLevel())
