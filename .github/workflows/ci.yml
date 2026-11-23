@@ -1,0 +1,31 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  addons:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # the Puzzle compatibility tests export older releases from history
+      - name: Install LuaJIT
+        run: sudo apt-get update && sudo apt-get install -y luajit
+      - name: Test every module, and Puzzle against older releases
+        run: tests/run_all.sh
+
+  ttpz:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: tools/ttpz
+      - name: Build
+        run: cargo build --locked --manifest-path tools/ttpz/Cargo.toml
+      - name: Test
+        run: cargo test --locked --manifest-path tools/ttpz/Cargo.toml

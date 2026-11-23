@@ -2,7 +2,7 @@
 ## Title: |cffe8a33dTurkey Tickle UI|r: Cooking
 ## Notes: Cooking coach: what in your bags can level Cooking right now, reminders to actually cook it, and the best mobs nearby to hunt for meat.
 ## Author: TurkeyTickle
-## Version: 0.1.0
+## Version: @project-version@
 ## Category: Turkey Tickle UI
 ## Group: TurkeyTickleUI
 ## IconTexture: Interface\Icons\INV_Misc_Food_15

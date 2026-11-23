@@ -13,7 +13,10 @@ enable only the ones you want.
 
 ## Install
 
-Copy (or symlink) each module folder into:
+Download the zip from the latest [GitHub release](https://github.com/TurkeyTickle/TurkeyTickleUI/releases)
+and extract it into `World of Warcraft/_forever_/Interface/AddOns/`.
+
+To run straight from the repository instead, copy (or symlink) each module folder into:
 
 ```
 World of Warcraft/_forever_/Interface/AddOns/
@@ -34,6 +37,9 @@ luajit tests/harness_cooking.lua TurkeyTickleUI_Cooking
 luajit tests/harness_xp.lua TurkeyTickleUI_XP
 ```
 
+`tests/run_all.sh` runs all of them, then plays the Puzzle module against older releases
+(`tests/puzzle_compat.sh`). CI runs it on every push and pull request.
+
 The Pets and Cooking data files are generated from addons in your Forever install:
 
 ```
@@ -48,6 +54,28 @@ cargo build --release --manifest-path tools/ttpz/Cargo.toml
 tools/ttpz/target/release/ttpz https://example.com/picture.jpg --out /tmp/code.txt
 luajit tests/harness_puzzle.lua TurkeyTickleUI_Puzzle /tmp/code.txt
 ```
+
+## Releasing
+
+All modules share one version, taken from the git tag: plain semver with no `v` (`0.2.0`, or
+`0.3.0-beta.1` / `0.3.0-alpha.1` for test builds). The TOCs say `## Version: @project-version@`, and
+packaging replaces that with the tag. A copy straight from the repository calls itself `dev`.
+
+To release, run the **Release** workflow from the Actions tab and pick which part of the version to
+raise, or give an exact version. Pushing a tag also works. The workflow:
+
+1. Checks the version (`tools/next_version.sh`) and runs `tests/run_all.sh`
+2. Tags the commit and writes a changelog from the commits since the last release
+3. Packages every module into one zip with the [BigWigs packager](https://github.com/BigWigsMods/packager)
+   (`.pkgmeta`) and publishes it as a GitHub release
+
+To also upload to CurseForge, create the project there, then add a repository secret
+`CF_API_KEY` (a CurseForge API token) and a repository variable `CURSEFORGE_PROJECT_ID`. Releases
+skip CurseForge until both exist.
+
+If a Puzzle change needs a new protocol, add the release it will ship in to `PROTOCOL_RELEASES` in
+`TurkeyTickleUI_Puzzle/Session.lua` (see the compatibility notes there). The release check refuses
+to release a version older than that.
 
 ## License
 

@@ -2,7 +2,7 @@
 ## Title: |cffe8a33dTurkey Tickle UI|r: Puzzle
 ## Notes: Multiplayer jigsaw puzzles. One player hosts a picture, everyone in the guild or group solves it together in real time.
 ## Author: TurkeyTickle
-## Version: 0.1.0
+## Version: @project-version@
 ## Category: Turkey Tickle UI
 ## Group: TurkeyTickleUI
 ## IconTexture: Interface\Icons\INV_Misc_Note_02

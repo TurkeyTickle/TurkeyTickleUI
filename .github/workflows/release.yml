@@ -1,0 +1,91 @@
+name: Release
+
+# Run it from the Actions tab to pick the next version, or push a version tag (0.2.0, 0.3.0-beta.1).
+# Either way it tests, packages every module into one zip with the version stamped into each TOC,
+# and publishes a GitHub release. It also uploads to CurseForge once the repository has a
+# CF_API_KEY secret and a CURSEFORGE_PROJECT_ID variable.
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: Which part of the latest version to raise
+        type: choice
+        options: [minor, patch, major]
+        default: minor
+      version:
+        description: Or an exact version (e.g. 0.2.0 or 0.3.0-beta.1), instead of raising one
+        required: false
+  push:
+    tags: ['[0-9]+.[0-9]+.[0-9]+*']
+
+permissions:
+  contents: write
+
+concurrency: release
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # tags, changelog and the Puzzle compatibility tests need the whole history
+
+      - name: Pick the version
+        id: version
+        env:
+          REQUEST: ${{ inputs.version || inputs.bump }}
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = push ]; then
+            # Already tagged: check it like a new one, minus the tag that triggered this.
+            git tag -d "$GITHUB_REF_NAME" >/dev/null
+            version=$(tools/next_version.sh "$GITHUB_REF_NAME")
+            git fetch --quiet origin "refs/tags/$GITHUB_REF_NAME:refs/tags/$GITHUB_REF_NAME"
+          else
+            version=$(tools/next_version.sh "$REQUEST")
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Releasing $version" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Install LuaJIT
+        run: sudo apt-get update && sudo apt-get install -y luajit
+
+      - name: Test
+        run: tests/run_all.sh
+
+      - name: Tag
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "$VERSION" -m "Turkey Tickle UI $VERSION"
+          git push origin "refs/tags/$VERSION"
+
+      - name: Write the changelog
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          previous=$(git describe --tags --abbrev=0 --match '[0-9]*' "$VERSION^" 2>/dev/null || true)
+          {
+            echo "# Turkey Tickle UI $VERSION"
+            echo
+            git log --no-merges --format='- %s' ${previous:+"$previous.."}"$VERSION"
+          } > CHANGELOG.md
+          cat CHANGELOG.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Packager options
+        id: options
+        env:
+          CURSEFORGE_PROJECT_ID: ${{ vars.CURSEFORGE_PROJECT_ID }}
+        run: echo "args=${CURSEFORGE_PROJECT_ID:+-p $CURSEFORGE_PROJECT_ID}" >> "$GITHUB_OUTPUT"
+
+      - name: Package and publish
+        uses: BigWigsMods/packager@v2
+        with:
+          args: ${{ steps.options.outputs.args }}
+        env:
+          GITHUB_OAUTH: ${{ secrets.GITHUB_TOKEN }}
+          CF_API_KEY: ${{ secrets.CF_API_KEY }}

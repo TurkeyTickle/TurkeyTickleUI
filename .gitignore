@@ -5,3 +5,4 @@ tools/.cache/
 __pycache__/
 tools/bin/
 tools/ttpz/target/
+CHANGELOG.md

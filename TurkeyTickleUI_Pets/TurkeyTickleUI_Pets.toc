@@ -2,7 +2,7 @@
 ## Title: |cffe8a33dTurkey Tickle UI|r: Pets
 ## Notes: Hunter pet guide: where to learn every pet skill, which beasts to tame, and rare pets on your world map. Data from Petopia.
 ## Author: TurkeyTickle
-## Version: 0.1.0
+## Version: @project-version@
 ## Category: Turkey Tickle UI
 ## Group: TurkeyTickleUI
 ## IconTexture: Interface\Icons\Ability_Hunter_BeastTaming

@@ -120,6 +120,9 @@ function ns:CreateOptions()
 	title:SetText(SUITE_NAME .. ": Pets")
 
 	local version = C_AddOns and C_AddOns.GetAddOnMetadata and C_AddOns.GetAddOnMetadata(ADDON, "Version")
+	if version and version:find("@", 1, true) then
+		version = "dev" -- releases stamp the TOC's version; a copy from the repository has the placeholder
+	end
 	local subtitle = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
 	subtitle:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -6)
 	subtitle:SetText((version and ("v" .. version .. "  ") or "") .. "Type /ttpets to open the pet browser, /ttpets <name> to search.")

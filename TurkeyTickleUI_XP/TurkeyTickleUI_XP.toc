@@ -2,7 +2,7 @@
 ## Title: |cffe8a33dTurkey Tickle UI|r: XP
 ## Notes: A tiny movable window with your XP per hour, session average, trend line and time to level.
 ## Author: TurkeyTickle
-## Version: 0.1.0
+## Version: @project-version@
 ## Category: Turkey Tickle UI
 ## Group: TurkeyTickleUI
 ## IconTexture: Interface\Icons\INV_Misc_PocketWatch_01

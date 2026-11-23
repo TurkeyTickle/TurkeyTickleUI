@@ -1,0 +1,22 @@
+package-as: TurkeyTickleUI
+
+move-folders:
+  TurkeyTickleUI/TurkeyTickleUI_Cooking: TurkeyTickleUI_Cooking
+  TurkeyTickleUI/TurkeyTickleUI_Pets: TurkeyTickleUI_Pets
+  TurkeyTickleUI/TurkeyTickleUI_Plates: TurkeyTickleUI_Plates
+  TurkeyTickleUI/TurkeyTickleUI_Puzzle: TurkeyTickleUI_Puzzle
+  TurkeyTickleUI/TurkeyTickleUI_XP: TurkeyTickleUI_XP
+
+# The release workflow writes CHANGELOG.md. Keeping it (and everything else) out of the package
+# root leaves that folder empty, so the zip holds only the module folders.
+manual-changelog:
+  filename: CHANGELOG.md
+  markup-type: markdown
+
+ignore:
+  - docs
+  - tests
+  - tools
+  - README.md
+  - LICENSE
+  - CHANGELOG.md
