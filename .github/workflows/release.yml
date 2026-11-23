@@ -3,9 +3,13 @@ name: Release
 # Every push to prod (merging main into it) is a release. The version is picked automatically
 # (tools/next_version.sh): the patch number goes up, or the minor / major number when a commit
 # message since the last release says [minor] / [major]. The workflow tests, tags, packages every
-# module into one zip with the version stamped into each TOC, publishes a GitHub release with the
-# ttpz image tool for Windows and Linux attached, and uploads the zip to CurseForge once the
-# repository has a CF_API_KEY secret and a CURSEFORGE_PROJECT_ID variable.
+# module into one zip with the version stamped into each TOC, and publishes a GitHub release with
+# the ttpz image tool for Windows and Linux attached. Standalone modules (Puzzle) also get a zip of
+# their own on the release.
+#
+# CurseForge needs a CF_API_KEY secret. Each standalone module uploads to its own project once a
+# CURSEFORGE_PROJECT_ID_<MODULE> variable (e.g. CURSEFORGE_PROJECT_ID_PUZZLE) is set; the suite zip
+# only uploads if CURSEFORGE_PROJECT_ID is set.
 #
 # Running it by hand on prod releases prod as it is, optionally as an exact version such as a beta.
 
@@ -78,16 +82,39 @@ jobs:
           } > CHANGELOG.md
           cat CHANGELOG.md >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Package and publish
+      # On a branch push the packager skips tagged commits, expecting a separate run for the tag.
+      # This run made the tag, so the packager runs as if started by hand.
+      - name: Package the suite and publish the GitHub release
         env:
-          GITHUB_OAUTH: ${{ secrets.GITHUB_TOKEN }}
-          CF_API_KEY: ${{ secrets.CF_API_KEY }}
+          GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CF_API_TOKEN: ${{ secrets.CF_API_KEY }}
           CURSEFORGE_PROJECT_ID: ${{ vars.CURSEFORGE_PROJECT_ID }}
         run: |
           curl -sSfL -o "$RUNNER_TEMP/release.sh" https://raw.githubusercontent.com/BigWigsMods/packager/v2/release.sh
-          # On a branch push the packager skips tagged commits, expecting a separate run for the tag.
-          # This run made the tag, so it packages as if started by hand.
           GITHUB_EVENT_NAME=workflow_dispatch bash "$RUNNER_TEMP/release.sh" ${CURSEFORGE_PROJECT_ID:+-p "$CURSEFORGE_PROJECT_ID"}
+
+      # Modules with their own CurseForge listing also ship alone: a zip of just that addon goes on
+      # the GitHub release, and to CurseForge once CURSEFORGE_PROJECT_ID_<MODULE> is set.
+      - name: Package standalone modules
+        env:
+          STANDALONE_MODULES: Puzzle
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CF_API_TOKEN: ${{ secrets.CF_API_KEY }}
+          VARS: ${{ toJSON(vars) }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          previous=$(git tag --list '[0-9]*' --sort=-v:refname | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | grep -vxF "$VERSION" | head -n1)
+          for module in $STANDALONE_MODULES; do
+            folder="TurkeyTickleUI_$module"
+            {
+              echo "# Turkey Tickle UI: $module $VERSION"
+              echo
+              git log --no-merges --format='- %s' ${previous:+"$previous.."}"$VERSION" -- "$folder"
+            } > CHANGELOG.md
+            project=$(jq -r --arg key "CURSEFORGE_PROJECT_ID_${module^^}" '.[$key] // empty' <<< "$VARS")
+            GITHUB_EVENT_NAME=workflow_dispatch tools/package_module.sh "$RUNNER_TEMP/release.sh" "$module" ${project:+-p "$project"}
+            gh release upload "$VERSION" ".release/standalone/$module/$folder-"*.zip --clobber
+          done
 
       - uses: actions/download-artifact@v8
         with:

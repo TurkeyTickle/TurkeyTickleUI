@@ -14,7 +14,8 @@ enable only the ones you want.
 ## Install
 
 Download the zip from the latest [GitHub release](https://github.com/TurkeyTickle/TurkeyTickleUI/releases)
-and extract it into `World of Warcraft/_forever_/Interface/AddOns/`.
+and extract it into `World of Warcraft/_forever_/Interface/AddOns/`. `TurkeyTickleUI-<version>`
+has every module; `TurkeyTickleUI_Puzzle-<version>` is the Puzzle module on its own.
 
 To run straight from the repository instead, copy (or symlink) each module folder into:
 
@@ -71,12 +72,18 @@ like `0.3.0-beta.1`, run the **Release** workflow on `prod` from the Actions tab
 2. Tags the commit and writes a changelog from the commits since the last release
 3. Packages every module into one zip with the [BigWigs packager](https://github.com/BigWigsMods/packager)
    (`.pkgmeta`) and publishes it as a GitHub release
-4. Attaches the `ttpz` image tool, built for Windows and Linux (`.github/workflows/ttpz.yml`, which
+4. Packages each standalone module (listed in `STANDALONE_MODULES` in
+   `.github/workflows/release.yml`, currently just Puzzle) on its own with `tools/package_module.sh`,
+   attaches that zip to the release, and uploads it to the module's CurseForge project
+5. Attaches the `ttpz` image tool, built for Windows and Linux (`.github/workflows/ttpz.yml`, which
    CI also runs on every push)
 
-To also upload to CurseForge, create the project there, then add a repository secret
-`CF_API_KEY` (a CurseForge API token) and a repository variable `CURSEFORGE_PROJECT_ID`. Releases
-skip CurseForge until both exist.
+CurseForge uploads need a repository secret `CF_API_KEY` (a CurseForge API token). Each standalone
+module has its own CurseForge project, set with a repository variable named after it:
+`CURSEFORGE_PROJECT_ID_PUZZLE` for Puzzle. A module without that variable only goes to GitHub. The
+suite zip with every module goes to GitHub only, unless a `CURSEFORGE_PROJECT_ID` variable is set
+for a suite project. Don't put `X-Curse-Project-ID` in the TOCs: the suite packaging would pick it
+up and upload everything to that project.
 
 If a Puzzle change needs a new protocol, add the release it will ship in to `PROTOCOL_RELEASES` in
 `TurkeyTickleUI_Puzzle/Session.lua` (see the compatibility notes there). The automatic version is
