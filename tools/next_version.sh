@@ -3,7 +3,7 @@
 #   tools/next_version.sh [auto]              pick it from the commits since the last release
 #   tools/next_version.sh patch|minor|major   raise that part of the last release
 #   tools/next_version.sh 1.2.3[-beta.1]      use exactly this version
-# Auto raises the patch number, or the minor / major number when any commit message since the last
+# Auto raises the patch number, or the minor / major number when any commit title since the last
 # release says [minor] / [major]. Versions are plain semver tags with no "v"; ones with "alpha" or
 # "beta" in them become alpha / beta files on CurseForge.
 set -e
@@ -41,7 +41,7 @@ fi
 
 case $request in
 	auto)
-		messages=$(git log --format=%B ${latest:+"$latest..HEAD"})
+		messages=$(git log --format=%s ${latest:+"$latest..HEAD"})
 		part=patch
 		if printf '%s' "$messages" | grep -qF '[major]'; then
 			part=major

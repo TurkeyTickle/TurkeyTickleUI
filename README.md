@@ -64,7 +64,7 @@ packaging replaces that with the tag. A copy straight from the repository calls 
 
 Work happens on `main`. To release, merge `main` into `prod` (a pull request from `main` to `prod`
 is easiest). Every push to `prod` is a release, and the version is picked for you: the patch number
-goes up (0.2.0 to 0.2.1), unless a commit message since the last release contains `[minor]`
+goes up (0.2.0 to 0.2.1), unless a commit title since the last release contains `[minor]`
 (0.2.0 to 0.3.0) or `[major]` (0.2.0 to 1.0.0). To release `prod` as it is, or as an exact version
 like `0.3.0-beta.1`, run the **Release** workflow on `prod` from the Actions tab. The workflow:
 

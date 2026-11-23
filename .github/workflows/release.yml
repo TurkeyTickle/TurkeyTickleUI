@@ -2,7 +2,7 @@ name: Release
 
 # Every push to prod (merging main into it) is a release. The version is picked automatically
 # (tools/next_version.sh): the patch number goes up, or the minor / major number when a commit
-# message since the last release says [minor] / [major]. The workflow tests, tags, packages every
+# title since the last release says [minor] / [major]. The workflow tests, tags, packages every
 # module into one zip with the version stamped into each TOC, and publishes a GitHub release with
 # the ttpz image tool for Windows and Linux attached. Standalone modules (Puzzle) also get a zip of
 # their own on the release.
