@@ -34,6 +34,19 @@ local function sendProgress(session)
 	return 1 - math.min(ns:QueuedBulk(), chunks) / chunks
 end
 
+-- Where a puzzle stands for us, colored.
+function ns:SessionState(session)
+	if session.isMaster then
+		local sent = sendProgress(session)
+		return sent < 1 and format("|cff66b3ffsending %d%%|r", math.floor(sent * 100)) or "|cff40ff40you're hosting|r"
+	elseif not session.decoder:IsComplete() then
+		return format("|cff66b3ffloading %d%%|r", math.floor(session.decoder:Progress() * 100))
+	elseif session == self.active then
+		return format("|cff40ff40playing, %d/%d placed|r", session.placedCount, #session.pieces)
+	end
+	return "|cffffd100ready to play!|r"
+end
+
 local function position()
 	local angle = math.rad(ns.db.minimapAngle)
 	local radius = Minimap:GetWidth() / 2 + EDGE_PADDING
@@ -55,24 +68,14 @@ local function showTooltip(self)
 	local any = false
 	for _, session in pairs(ns.sessions) do
 		any = true
-		local state
-		if session.isMaster then
-			local sent = sendProgress(session)
-			state = sent < 1 and format("|cff66b3ffsending %d%%|r", math.floor(sent * 100)) or "|cff40ff40you're hosting|r"
-		elseif not session.decoder:IsComplete() then
-			state = format("|cff66b3ffloading %d%%|r", math.floor(session.decoder:Progress() * 100))
-		elseif session == ns.active then
-			state = format("|cff40ff40playing, %d/%d placed|r", session.placedCount, #session.pieces)
-		else
-			state = "|cffffd100ready to play!|r"
-		end
-		GameTooltip:AddDoubleLine(format("%s |cff9d9d9d(%s)|r", session.title or "?", ns:ShortName(session.master)), state, 1, 0.82, 0)
+		GameTooltip:AddDoubleLine(format("%s |cff9d9d9d(%s)|r", session.title or "?", ns:ShortName(session.master)),
+			ns:SessionState(session), 1, 0.82, 0)
 	end
 	if not any then
 		GameTooltip:AddLine("No puzzles right now.", 0.7, 0.7, 0.7)
 	end
 	GameTooltip:AddLine(" ")
-	GameTooltip:AddLine("|cffffffffClick|r to open the puzzle", 0.8, 0.8, 0.8)
+	GameTooltip:AddLine("|cffffffffClick|r to open the puzzle, or the list of puzzles", 0.8, 0.8, 0.8)
 	GameTooltip:AddLine("|cffffffffRight-click|r to host a puzzle", 0.8, 0.8, 0.8)
 	GameTooltip:AddLine("|cffffffffDrag|r to move this button", 0.8, 0.8, 0.8)
 	GameTooltip:Show()

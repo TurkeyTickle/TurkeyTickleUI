@@ -753,6 +753,25 @@ hostDialog.pasted = sample
 hostDialog.name:SetText("Again")
 hostDialog.start._scripts.OnClick()
 check(alice.ns.active ~= turnHost and alice.ns.active.title == "Again", "hosting from the host window starts the new puzzle")
+run(1)
+bob.ns:LeaveSession()
+bob.ns:Toggle()
+local bobList = bob.env.TurkeyTickleUIPuzzleHost
+local firstRow = bobList.rows[1]
+check(bobList:IsShown() and bobList.listView:IsShown() and not bobList.hostView:IsShown(),
+	"opening the puzzle outside one shows the list of puzzles")
+check(firstRow:IsShown() and firstRow.session and firstRow.session.title == "Again" and firstRow.join:GetText() == "Join",
+	"the list shows the newest puzzle in the guild first, with a join button")
+firstRow.join._scripts.OnClick()
+check(bob.ns.active == firstRow.session and bob.ns:IsBoardShown() and not bobList:IsShown(),
+	"joining from the list opens the puzzle")
+bob.ns:LeaveSession()
+bob.ns:ShowPuzzles()
+bobList.listView._scripts.OnUpdate(bobList.listView, 1)
+check(firstRow:IsShown() and firstRow.join:GetText() == "Join", "the list refreshes itself while it's open")
+bob.ns:ShowHost()
+check(bobList.hostView:IsShown() and not bobList.listView:IsShown(), "the host button shows the host form")
+bobList:Hide()
 alice.ns:ShowHost()
 check(hostDialog.pasted == "" and hostDialog.name:GetText() == "",
 	"the host window forgets the last picture once it's started, so it can't be hosted again by accident")

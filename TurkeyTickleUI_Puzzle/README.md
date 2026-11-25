@@ -17,7 +17,7 @@ picture and everyone in the guild (or party / raid) with the addon puts it toget
 - Pieces snap into place near their spot; placed pieces lock
 - Drop a piece next to a matching neighbor anywhere on the board and they snap together; move the
   group as one and drop it into place
-- Optional turned pieces (the host decides): pieces start at random quarter turns. Scroll while
+- Optional piece rotation (the host decides): pieces start at random quarter turns. Scroll while
   dragging a piece to turn it either way. Only upright pieces drop into
   place, and neighbors only snap together when they're turned the same way
 - Resize the window from its corner, down to a small 320 x 240 to keep it on screen while you play;
@@ -42,9 +42,10 @@ picture and everyone in the guild (or party / raid) with the addon puts it toget
    prints the code. Useful options: `--size` (longest side, up to 320 pixels;
    default 192; use 128 for a picture that arrives in about 10 seconds), `--colors` (up to 64), `--dither` (smoother photos), `--preview out.png` (see what
    players will get), `--out code.txt` (write the code to a file). See [Building the image tool](#building-the-image-tool).
-2. In game, type `/ttpz host`, paste the code, name the puzzle, pick the number of pieces and whether
-   to play with your guild or your party / raid, and click **Start puzzle**. Tick **Pieces start
-   turned** for a harder puzzle where pieces have to be turned upright. Not in a party? Choose
+2. In game, type `/ttpz host` (or `/ttpz` and click **Host a puzzle**), paste the code, name the
+   puzzle, pick the number of pieces and whether to play with your guild or your party / raid, and
+   click **Start puzzle**. Tick **Piece rotation** for a harder puzzle where pieces start turned and
+   have to be turned upright. Not in a party? Choose
    party / raid anyway and you'll be asked whether to puzzle alone; anyone who joins your party
    later can play along.
 
@@ -54,7 +55,7 @@ No image handy? Click **Use sample picture** in the host window.
 
 | Command            | Action |
 | ------------------ | ------ |
-| `/ttpz`            | Open the puzzle (or join the latest one, or host if there isn't one) |
+| `/ttpz`            | Open your puzzle, or the list of puzzles in your guild and party to join or host one |
 | `/ttpz host`       | Host a new puzzle |
 | `/ttpz join [name]`| Join the latest puzzle, or the one hosted by `name`. If you haven't heard about one (it started before you logged in), asks your guild and group and joins the puzzle in progress |
 | `/ttpz leave`      | Stop playing (you can rejoin later) |

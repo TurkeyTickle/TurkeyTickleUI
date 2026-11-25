@@ -772,12 +772,8 @@ function ns:Toggle()
 		self:HideBoard()
 	elseif self.active then
 		self:ShowBoard()
-	elseif next(self.sessions) then
-		self:JoinSession(self:FindSession())
 	else
-		-- Any puzzle that answers gets announced, with a popup once it's loaded.
-		self:LookForPuzzles()
-		self:ShowHost()
+		self:ShowPuzzles()
 	end
 end
 
@@ -1067,11 +1063,12 @@ end
 
 function receive.H(sender, f)
 	local now = GetTime()
-	if now - (lastAnswered["H" .. sender] or -10) < 10 then
+	local channel = f.channel == "GUILD" and "G" or "P"
+	local key = "H" .. channel .. sender
+	if now - (lastAnswered[key] or -10) < 10 then
 		return
 	end
-	lastAnswered["H" .. sender] = now
-	local channel = f.channel == "GUILD" and "G" or "P"
+	lastAnswered[key] = now
 	-- 0.1.0 says hello without a protocol.
 	local protocol, version = tonumber(f[2]) or 1, f[3] and f[3]:gsub("|", "") or PROTOCOL_RELEASES[1]
 	for _, session in pairs(ns.sessions) do
