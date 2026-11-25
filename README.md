@@ -23,6 +23,11 @@ To run straight from the repository instead, copy (or symlink) each module folde
 World of Warcraft/_forever_/Interface/AddOns/
 ```
 
+To develop next to a release install, run `tools/dev_link.sh [AddOns folder]` instead. It links
+`TurkeyTickleUI_<Module>_Dev` copies of the repository that show up as a separate **[DEV]** group in
+the in-game AddOns list; enable either the release or the dev copies, not both. Run it again after
+editing any `.toc`, then restart the game.
+
 All modules share one **Turkey Tickle UI** page in the in-game AddOns options.
 
 ## Development
