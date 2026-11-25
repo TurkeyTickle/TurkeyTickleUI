@@ -3,6 +3,7 @@ local _, ns = ...
 local ROW_HEIGHT = 20
 local INDENT = 14
 local TABS = {
+	{ key = "guide", label = "Guide" },
 	{ key = "skills", label = "Skills" },
 	{ key = "families", label = "Families" },
 	{ key = "special", label = "Rare & Special" },
@@ -11,7 +12,7 @@ local TABS = {
 
 local GREEN, GREY, GOLD, PURPLE = "|cff40ff40", "|cff9d9d9d", "|cffffd100", "|cffc080ff"
 
-local expanded = { ready = true }
+local expanded = { ready = true, ["guide:pet"] = true, ["guide:now"] = true, ["guide:tames"] = true }
 local playerPos = {}
 
 local function stripCodes(text)
@@ -51,6 +52,10 @@ local function beastNode(parentID, npcID)
 	local npc = ns.npcs[npcID]
 	local text = format("%s%s|r  %s(%s)|r", ns:IsTameable(npc) and "|cffffffff" or GREY, npc.n,
 		ns:LevelColor(npc.lv), npc.lv ~= "" and npc.lv or "??")
+	local interval = ns:PetAttackInterval(npcID, npc)
+	if interval then
+		text = text .. format("  %.1fs swing", interval)
+	end
 	if npc.lists and npc.look then
 		text = text .. "  " .. PURPLE .. npc.look .. "|r"
 	end
@@ -260,11 +265,26 @@ local function familiesTree()
 	local nodes = {}
 	for _, family in ipairs(ns.families) do
 		local id = "family:" .. family.key
+		local modifiers = ns:FamilyStatsText(family.key)
+		local stats = ns.familyStats[family.key]
 		tinsert(nodes, {
 			id = id,
 			icon = ns:FamilyIcon(family.key),
 			text = GOLD .. family.name .. "|r  " .. (ns.roleNames[family.role] or ""),
-			right = family.diet,
+			right = modifiers or family.diet,
+			tooltip = function(tooltip)
+				tooltip:SetText(family.name, 1, 0.82, 0)
+				if modifiers then
+					tooltip:AddLine("Family modifiers relative to baseline", 0.8, 0.8, 0.8)
+					tooltip:AddLine(modifiers, 1, 1, 1)
+				end
+				if stats and stats.fastest then
+					local range = stats.fastest == stats.slowest and format("%.1f", stats.fastest)
+						or format("%.1f–%.1f", stats.fastest, stats.slowest)
+					tooltip:AddLine("Documented attack speed: " .. range .. " sec per swing", 1, 1, 1)
+				end
+				tooltip:AddLine("Diet: " .. family.diet, 0.8, 0.8, 0.8)
+			end,
 			children = function()
 				local kids = {}
 				for _, key in ipairs(family.active) do
@@ -357,7 +377,148 @@ local function trainersTree()
 	return nodes
 end
 
-local TREES = { skills = skillsTree, families = familiesTree, special = specialTree, trainers = trainersTree }
+local function guideRankNode(groupID, action, pet, hunterLevel)
+	local ability, rank = action.ability, action.rank
+	local id = groupID .. ":" .. ability.key .. ":" .. rank.rank
+	local route, instructions, children
+	if action.source == "wild" then
+		route = "Tame to learn"
+		instructions = "Stable your usual pet, tame a teacher, and use the skill until you learn it. Then teach your usual pet in Beast Training."
+		children = function()
+			local teachers = {}
+			for _, npcID in ipairs(teacherIDs(rank, false)) do
+				local npc = ns.npcs[npcID]
+				local level = ns:MinLevel(npc.lv)
+				if not npc.untameable and level and level <= math.max(hunterLevel, action.hunterGate) then
+					tinsert(teachers, beastNode(id, npcID))
+				end
+			end
+			return teachers
+		end
+	elseif action.source == "trainer" then
+		route = "Visit a pet trainer"
+		instructions = "Learn the rank from a pet trainer, then teach it to your pet in Beast Training."
+		children = function()
+			local trainers = {}
+			for _, npcID in ipairs(myTrainers()) do
+				tinsert(trainers, trainerNode(id, npcID))
+			end
+			return trainers
+		end
+	else
+		route = action.currentRank and "Teach with Beast Training" or "Check Beast Training"
+		instructions = "You've learned this rank. Check your pet's training points and whether it already knows the rank in Beast Training."
+	end
+	local gates = {}
+	if action.hunterGate > hunterLevel then tinsert(gates, "hunter " .. action.hunterGate) end
+	if rank.level > pet.level then tinsert(gates, "pet " .. rank.level) end
+	local status = #gates > 0 and ("At " .. table.concat(gates, " & ")) or route
+	if action.hunterGate <= hunterLevel and rank.level > pet.level and action.source ~= "known" then
+		status = format("Learn now, teach at pet %d", rank.level)
+	end
+	return {
+		id = id,
+		icon = ns:AbilityIcon(ability),
+		text = format("%s %d  %s%d TP total|r", ability.name, rank.rank, GREY, rank.tp),
+		right = status,
+		children = children,
+		tooltip = function(tooltip)
+			tooltip:SetText(format("%s %d", ability.name, rank.rank), 1, 0.82, 0)
+			tooltip:AddLine(rank.desc, 1, 1, 1, true)
+			if action.currentRank then
+				tooltip:AddLine("Your pet knows rank " .. action.currentRank, 0.8, 0.8, 0.8)
+			end
+			tooltip:AddLine(format("Pet level %d, %d total training points", rank.level, rank.tp), 0.8, 0.8, 0.8)
+			tooltip:AddLine(instructions, 0.8, 0.8, 0.8, true)
+		end,
+	}
+end
+
+local function guideUpgradeGroups(pet, hunterLevel)
+	local now, later = ns:GuideUpgrades(pet, hunterLevel)
+	local groups = {}
+	for _, group in ipairs({
+		{ id = "guide:now", title = "Improve now", actions = now, empty = "No documented upgrades to work on at these levels." },
+		{ id = "guide:later", title = "Upcoming upgrades", actions = later, empty = "No higher ranks with a documented source." },
+	}) do
+		local rows = {}
+		for _, action in ipairs(group.actions) do
+			tinsert(rows, guideRankNode(group.id, action, pet, hunterLevel))
+		end
+		if #rows == 0 then
+			tinsert(rows, { id = group.id .. ":empty", text = GREY .. group.empty .. "|r" })
+		end
+		tinsert(groups, { id = group.id, text = group.title, children = function() return rows end })
+	end
+	return groups
+end
+
+local function guideTameGroups(tameLevel)
+	local groups = {}
+	for _, archetype in ipairs(ns.guideArchetypes) do
+		local id = "guide:" .. archetype.key
+		local rows = {}
+		for _, choice in ipairs(ns:GuideTames(archetype, tameLevel, distance)) do
+			local npc = ns.npcs[choice.npcID]
+			local node = beastNode(id, choice.npcID)
+			local fill = node.tooltip
+			local skill = choice.skill
+			local reason = choice.reason
+			local highestSpawnLevel = tonumber(npc.lv:match("(%d+)%s*$"))
+			node.tooltip = function(tooltip)
+				fill(tooltip)
+				tooltip:AddLine(reason, 1, 1, 1, true)
+				if highestSpawnLevel and highestSpawnLevel > choice.level then
+					tooltip:AddLine("Look for a level " .. choice.level .. " spawn.", 0.8, 0.8, 0.8)
+				end
+				if choice.rank == 0 and skill and ns:KnownRank(skill) == 0 then
+					tooltip:AddLine("Check this beast with Beast Lore or learn " .. skill.name .. " from a teacher.", 0.8, 0.8, 0.8, true)
+				end
+			end
+			node.text = ns:FamilyName(npc.f) .. "  " .. node.text
+			tinsert(rows, node)
+		end
+		if #rows > 0 then
+			local top = ns.npcs[rows[1].npcID]
+			tinsert(groups, { id = id, text = archetype.name, right = top.n .. " (" .. top.lv .. ")",
+				children = function() return rows end })
+		end
+	end
+	return groups
+end
+
+local function guideTree()
+	local hunterLevel = ns:PlayerLevel()
+	local pet = ns:GuidePet()
+	local petRows
+	local petLabel = "No active pet"
+	if pet then
+		petLabel = pet.name or "Active pet"
+		if pet.family then petLabel = petLabel .. "  /  " .. ns:FamilyName(pet.family) end
+		if pet.level then petLabel = petLabel .. "  /  Level " .. pet.level end
+	end
+	if pet and pet.family and pet.level then
+		petRows = guideUpgradeGroups(pet, hunterLevel)
+		if not next(ns.char.known) then
+			table.insert(petRows, 1, { id = "guide:import", text = GREY .. "Use Read my skills to include the ranks you've learned.|r" })
+		end
+	else
+		petRows = { { id = "guide:no-pet", text = GREY ..
+			(pet and "Your pet's family or level is unavailable." or "Call your pet to see its training plan.") .. "|r" } }
+	end
+	local tames = guideTameGroups(math.max(hunterLevel, 10))
+	if #tames == 0 then
+		tinsert(tames, { id = "guide:no-tames", text = GREY .. "No documented ordinary tames at this level.|r" })
+	end
+	return {
+		{ id = "guide:pet", text = GOLD .. "Current pet|r", right = petLabel, children = function() return petRows end },
+		{ id = "guide:tames", text = GOLD .. "Choose a pet|r",
+			right = hunterLevel < 10 and "First tame at hunter level 10" or "Hunter level " .. hunterLevel,
+			children = function() return tames end },
+	}
+end
+
+local TREES = { guide = guideTree, skills = skillsTree, families = familiesTree, special = specialTree, trainers = trainersTree }
 
 -- Flattening ------------------------------------------------------------
 
@@ -519,7 +680,7 @@ local function createBrowser()
 	local prev
 	for _, tab in ipairs(TABS) do
 		local button = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
-		button:SetSize(110, 22)
+		button:SetSize(104, 22)
 		if prev then
 			button:SetPoint("LEFT", prev, "RIGHT", 4, 0)
 		else
@@ -626,7 +787,8 @@ local function createBrowser()
 		end
 		self.needed:SetShown(self.tab == "skills" or self.tab == "families")
 		self.needed:SetChecked(ns.db.onlyNeeded)
-		local query = strtrim(self.search:GetText() or ""):lower()
+		self.search:SetShown(self.tab ~= "guide")
+		local query = self.tab ~= "guide" and strtrim(self.search:GetText() or ""):lower() or ""
 		local rows = {}
 		flatten(TREES[self.tab](), 0, rows, query ~= "" and query or nil)
 		self.scroll:SetDataProvider(CreateDataProvider(rows), ScrollBoxConstants and ScrollBoxConstants.RetainScrollPosition)

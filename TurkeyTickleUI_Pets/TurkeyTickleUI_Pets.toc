@@ -12,12 +12,14 @@
 ## AddonCompartmentFunc: TurkeyTickleUI_Pets_OnAddonCompartmentClick
 
 Data\Families.lua
+Data\Stats.lua
 Data\Abilities.lua
 Data\Npcs.lua
 Data\Trainers.lua
 Data\MapFrames.lua
 Core.lua
 Known.lua
+Guide.lua
 Map.lua
 Browser.lua
 Tooltip.lua

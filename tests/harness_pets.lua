@@ -84,9 +84,12 @@ Settings = {
 	RegisterAddOnCategory = function() end,
 	OpenToCategory = function() end,
 }
-function UnitLevel() return 20 end
+local hunterLevel, pet
+function UnitLevel(unit) return unit == "pet" and pet and pet.level or hunterLevel or 20 end
+function UnitName(unit) return unit == "pet" and pet and pet.name end
+function UnitCreatureFamily(unit) if unit == "pet" and pet then return pet.family, pet.familyID end end
 function UnitFactionGroup() return "Alliance" end
-function UnitExists() return false end
+function UnitExists(unit) return unit == "pet" and pet ~= nil end
 function UnitGUID() return "Creature-0-1-2-3-1132-0000" end
 function IsShiftKeyDown() return false end
 function CreateVector2D(x, y) return { x = x, y = y, GetXY = function(v) return v.x, v.y end } end
@@ -98,6 +101,14 @@ function CreateScrollBoxListLinearView()
 end
 ScrollUtil = { InitScrollBoxListWithScrollBar = function() end }
 Enum = { UIMapType = { Continent = 2, Zone = 3 }, TrainerType = { Pet = 2 }, TooltipDataType = { Unit = 2 } }
+Enum.SpellBookSpellBank = { Pet = 1 }
+C_SpellBook = {
+	HasPetSpells = function() return pet and #pet.skills end,
+	GetSpellBookItemName = function(slot, bank)
+		assert(bank == Enum.SpellBookSpellBank.Pet)
+		return unpack(pet.skills[slot])
+	end,
+}
 
 -- Live map geometry modelled as the Era frames the data ships with (true for most Forever zones).
 local frames
@@ -182,6 +193,91 @@ print("imported from WhatsTraining:", ns:KnownRank(ns.abilityByKey.cower), ns:Kn
 spells[99999][2] = "Rank 2"
 fire("SPELL_DATA_LOAD_RESULT", 99999, true)
 print("charge after spell data loaded:", ns:KnownRank(ns.abilityByKey.charge))
+
+ns:ShowBrowser("families", "cats")
+local catRow
+for _, node in ipairs(ns.browser.scroll.lastRows) do
+	if node.id == "family:cat" then
+		catRow = node
+		break
+	end
+end
+assert(catRow)
+assert(catRow.right == "Physical damage +10%  /  Base armor 0%  /  Health -2%")
+assert(ns:FamilyStatsText("unknown") == nil)
+
+local tooltipLines = {}
+local function captureLine(_, line) tinsert(tooltipLines, line) end
+local statsTooltip = { AddLine = captureLine, SetText = captureLine }
+catRow.tooltip(statsTooltip)
+assert(table.concat(tooltipLines, "\n"):find("1.0–2.0 sec per swing", 1, true))
+
+ns:ShowBrowser("special", "broken tooth")
+local foundBrokenTooth
+for _, node in ipairs(ns.browser.scroll.lastRows) do
+	if node.npcID == 2850 then
+		foundBrokenTooth = true
+		assert(node.text:find("1.0s swing", 1, true))
+		wipe(tooltipLines)
+		node.tooltip(statsTooltip)
+		local lines = table.concat(tooltipLines, "\n")
+		assert(lines:find("Attack speed: 1.0 sec per swing", 1, true))
+		assert(lines:find("Cat family: Physical damage +10%", 1, true))
+	end
+end
+assert(foundBrokenTooth)
+assert(ns:PetAttackInterval(-4, ns.npcs[-4]) == 2)
+
+wipe(tooltipLines)
+ns:FillTooltip(statsTooltip, -999, { n = "Unknown Beast", f = "cat", lv = "10", z = "" })
+assert(not table.concat(tooltipLines, "\n"):find("Attack speed:", 1, true))
+ns.browser.search:SetText("")
+
+local function findRow(id)
+	for _, row in ipairs(ns.browser.scroll.lastRows) do
+		if row.id == id then return row end
+	end
+end
+
+local function clickRow(id)
+	local node = assert(findRow(id), id)
+	local row = newFrame()
+	initializer(row, node)
+	row.scripts.OnClick(row, "LeftButton")
+end
+
+hunterLevel = 8
+SlashCmdList.TURKEYTICKLEUI_PETS("guide")
+assert(ns.browser.tab == "guide" and findRow("guide:no-pet"))
+assert(findRow("guide:tames").right == "First tame at hunter level 10")
+hunterLevel = 40
+fire("PLAYER_LEVEL_UP")
+assert(findRow("guide:solo").right == "Mature Paletusk (38-39)")
+clickRow("guide:solo")
+assert(findRow("guide:solo:255851").npcID == 255851)
+pet = { name = "Truffle", level = 39, family = "Eber", familyID = 5, skills = {
+	{ "Bite", "Rank 4" }, { "Growl", "Rank 4" },
+} }
+fire("UNIT_PET", "player")
+assert(findRow("guide:pet").right:find("Truffle", 1, true))
+assert(findRow("guide:now:charge:4").right == "Tame to learn")
+clickRow("guide:now:charge:4")
+assert(findRow("guide:now:charge:4:255851").npcID == 255851)
+clickRow("guide:later")
+assert(findRow("guide:later:bite:6").right == "Learn now, teach at pet 40")
+assert(findRow("guide:later:growl:5"))
+pet.level = 40
+fire("UNIT_LEVEL", "pet")
+assert(findRow("guide:now:growl:5").right == "Visit a pet trainer")
+assert(findRow("guide:now:bite:6").right == "Tame to learn")
+ns:SetKnown(ns.abilityByKey.bite, 6, true)
+assert(findRow("guide:now:bite:6").right == "Teach with Beast Training")
+pet.skills[1][2] = "Rank 6"
+fire("SPELLS_CHANGED")
+assert(not findRow("guide:now:bite:6"))
+assert(findRow("guide:later:bite:7"))
+ns:SetKnown(ns.abilityByKey.bite, 6, false)
+pet, hunterLevel = nil, nil
 
 -- Every tab, fully expanded.
 local function expandAll(tab)

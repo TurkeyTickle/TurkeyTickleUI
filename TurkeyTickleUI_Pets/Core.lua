@@ -224,6 +224,8 @@ SlashCmdList.TURKEYTICKLEUI_PETS = function(msg)
 		ns:Print("Settings reset.")
 	elseif msg == "known" then
 		ns:PrintKnown()
+	elseif msg == "guide" then
+		ns:ShowBrowser("guide")
 	elseif msg ~= "" then
 		ns:ShowBrowser("skills", msg)
 	else

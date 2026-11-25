@@ -28,6 +28,40 @@ function ns:TeachesText(npcID)
 	return table.concat(parts, ", ")
 end
 
+local FAMILY_MODIFIERS = {
+	{ key = "damage", label = "Physical damage" },
+	{ key = "armor", label = "Base armor" },
+	{ key = "health", label = "Health" },
+}
+
+function ns:FamilyStatsText(familyKey)
+	local stats = self.familyStats[familyKey]
+	local parts = {}
+	for _, stat in ipairs(FAMILY_MODIFIERS) do
+		local value = stats and stats[stat.key]
+		if value ~= nil then
+			tinsert(parts, format("%s %s%%", stat.label, value == 0 and "0" or format("%+d", value)))
+		end
+	end
+	return #parts > 0 and table.concat(parts, "  /  ") or nil
+end
+
+function ns:PetAttackInterval(npcID, npc)
+	return self.attackSpeeds[(npc and npc.statID) or npcID]
+end
+
+local function addPetStats(tooltip, npcID, npc)
+	local interval = ns:PetAttackInterval(npcID, npc)
+	local familyStats = npc and not npc.untameable and ns:FamilyStatsText(npc.f)
+	if interval then
+		tooltip:AddLine(format("Attack speed: %.1f sec per swing", interval), 1, 1, 1)
+	end
+	if familyStats then
+		tooltip:AddLine(ns:FamilyName(npc.f) .. " family: " .. familyStats, 0.8, 0.8, 0.8, true)
+	end
+	return interval or familyStats
+end
+
 function ns:FillTooltip(tooltip, npcID, npc, isPin)
 	local name = npc.n .. (npc.sub and (" <" .. npc.sub .. ">") or "")
 	tooltip:SetText(name, 1, 0.82, 0)
@@ -37,6 +71,7 @@ function ns:FillTooltip(tooltip, npcID, npc, isPin)
 	else
 		tooltip:AddLine(format("%sLevel %s|r %s", self:LevelColor(npc.lv), npc.lv ~= "" and npc.lv or "??",
 			self:FamilyName(npc.f)), 1, 1, 1)
+		addPetStats(tooltip, npcID, npc)
 		if npc.look then
 			tooltip:AddLine("Look: " .. npc.look, 0.8, 0.8, 0.8)
 		end
@@ -114,6 +149,9 @@ local function onUnitTooltip(tooltip, data)
 	npcID = npcID or npcIDFromName(tooltip)
 	local npc = npcID and ns.npcs[npcID]
 	if not npc then
+		if addPetStats(tooltip, npcID) then
+			tooltip:Show()
+		end
 		return
 	end
 	local teaches = ns:TeachesText(npcID)
@@ -123,7 +161,8 @@ local function onUnitTooltip(tooltip, data)
 	if npc.lists and not npc.untameable then
 		tooltip:AddLine("|cffe8a33dPet:|r " .. PURPLE .. (npc.look or "Special pet") .. "|r")
 	end
-	if teaches or npc.lists then
+	local stats = addPetStats(tooltip, npcID, npc)
+	if teaches or npc.lists or stats then
 		tooltip:Show()
 	end
 end
